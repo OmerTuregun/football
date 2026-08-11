@@ -1,0 +1,6 @@
+.env
+data-pipeline/data/
+data-pipeline/node_modules/
+backups/
+
+*.log

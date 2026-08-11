@@ -1,0 +1,301 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  color: #1a1a18;
+  background: #ffffff;
+}
+
+@keyframes xi-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes xi-tile-flip {
+  0% {
+    transform: rotateX(0deg);
+  }
+  49% {
+    transform: rotateX(90deg);
+  }
+  51% {
+    transform: rotateX(90deg);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+@keyframes xi-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 109, 17, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 109, 17, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 109, 17, 0);
+  }
+}
+
+.xi-fade-up {
+  animation: xi-fade-up 0.45s ease-out both;
+}
+
+.xi-tile-flip {
+  animation: xi-tile-flip 0.55s ease-in-out both;
+  transform-style: preserve-3d;
+}
+
+.xi-pulse-active {
+  animation: xi-pulse-ring 1.6s ease-out infinite;
+}
+
+/* —— Kayıp 11 retro halı saha —— */
+.xi-stage-retro {
+  border-radius: 6px;
+  border: 3px solid #2a2418;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 10px 28px rgba(42, 36, 24, 0.22);
+}
+
+.xi-pitch-retro {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06) 0 28px,
+      transparent 28px 56px
+    ),
+    linear-gradient(165deg, #c4a86a 0%, #a88b52 38%, #8b7344 100%);
+}
+
+.xi-jersey-retro {
+  filter: drop-shadow(0 3px 6px rgba(42, 36, 24, 0.35));
+}
+
+.xi-jersey-retro svg {
+  stroke-width: 2.2px;
+}
+
+/* —— Onluk —— */
+.onluk-stage {
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(90, 70, 140, 0.55), transparent 55%),
+    linear-gradient(165deg, #2a2440 0%, #1a1628 48%, #12101c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.onluk-stage-retro {
+  border-radius: 6px;
+  border: 3px solid #2a2418;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(42, 36, 24, 0.03) 0px,
+      rgba(42, 36, 24, 0.03) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    linear-gradient(180deg, #e8d7b0 0%, #d9c49a 45%, #cbb589 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 28px rgba(42, 36, 24, 0.18);
+}
+
+.onluk-question {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.onluk-center {
+  background: linear-gradient(180deg, rgba(20, 16, 32, 0.95), rgba(12, 10, 20, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.onluk-center-retro {
+  border-radius: 3px;
+  border: 2px solid #2a2418;
+  background: linear-gradient(180deg, #3a3022 0%, #241c12 100%);
+  box-shadow: inset 0 1px 0 rgba(243, 230, 200, 0.12);
+}
+
+.onluk-box {
+  border-radius: 3px;
+  border: 2px solid #2a2418;
+  background: linear-gradient(180deg, #f4ead2 0%, #e6d5b0 100%);
+  color: #1a140c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition:
+    background 0.12s ease,
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.onluk-rank {
+  color: #6b5a42;
+}
+
+.onluk-box-filled {
+  background: linear-gradient(180deg, #6fbf6a 0%, #3f9a4a 100%);
+  color: #0f2a14;
+  border-color: #1f4d28;
+  animation: onluk-settle 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onluk-box-filled .onluk-rank {
+  color: #143d1c;
+}
+
+/* Revealed answers the player did not find */
+.onluk-box-missed {
+  background: linear-gradient(180deg, #f5d56a 0%, #e0b83a 100%);
+  color: #3d2e08;
+  border-color: #9a7a1a;
+  animation: onluk-settle 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onluk-box-missed .onluk-rank {
+  color: #6b5210;
+}
+
+.onluk-box-scan {
+  background: linear-gradient(180deg, #fff6dd 0%, #f0d9a0 100%);
+  transform: scale(1.02);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 2px rgba(196, 149, 58, 0.55);
+  z-index: 2;
+}
+
+.onluk-box-hit {
+  background: linear-gradient(180deg, #7ed87a 0%, #4caf50 100%) !important;
+  border-color: #1f4d28 !important;
+  transform: scale(1.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 3px rgba(63, 154, 74, 0.45);
+}
+
+.onluk-board-miss {
+  animation: onluk-board-miss 0.5s ease-in-out;
+}
+
+@keyframes onluk-board-miss {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 10px 28px rgba(42, 36, 24, 0.18);
+  }
+  35% {
+    box-shadow:
+      inset 0 0 0 3px rgba(180, 45, 35, 0.85),
+      0 10px 28px rgba(180, 45, 35, 0.25);
+  }
+}
+
+.onluk-life-ping {
+  animation: onluk-life-ping 0.85s ease;
+}
+
+@keyframes onluk-life-ping {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.onluk-slot-filled {
+  background: linear-gradient(180deg, #3ecf6a 0%, #2fb85a 100%);
+  animation: onluk-settle 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onluk-card {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem 1.1rem 0.85rem;
+  animation: onluk-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes onluk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes onluk-settle {
+  from {
+    opacity: 0.4;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes onluk-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.onluk-shake {
+  animation: onluk-shake 0.38s ease-in-out;
+}
+
+.onluk-flash-good {
+  box-shadow: 0 0 0 2px rgba(62, 207, 106, 0.55);
+}
+
+.onluk-flash-bad {
+  box-shadow: 0 0 0 2px rgba(232, 93, 93, 0.55);
+}
+
+@keyframes onluk-fly {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-80px) scale(0.9);
+  }
+}
+
+.onluk-fly {
+  animation: onluk-fly 0.42s ease-in forwards;
+}
+

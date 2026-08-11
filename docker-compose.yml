@@ -1,0 +1,155 @@
+name: football
+
+x-pipeline: &pipeline
+  build:
+    context: ./data-pipeline
+    dockerfile: Dockerfile
+  image: football-pipeline:latest
+  env_file:
+    - path: ./data-pipeline/.env
+      required: false
+  environment:
+    FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
+    API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+    STATPAL_ACCESS_KEY: ${STATPAL_ACCESS_KEY:-}
+    STATPAL_CONCURRENCY: ${STATPAL_CONCURRENCY:-6}
+    COMPETITION: ${COMPETITION:-CL}
+    SEASON: ${SEASON:-}
+    FROM: ${FROM:-}
+    TO: ${TO:-}
+    LIMIT: ${LIMIT:-200}
+    PRIORITY: ${PRIORITY:-}
+    IDS: ${IDS:-}
+  volumes:
+    - ./data-pipeline/data:/app/data
+    - ./data-pipeline/src/raw-cache:/app/src/raw-cache
+  working_dir: /app
+
+services:
+  migrate:
+    <<: *pipeline
+    profiles: [tools]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /app/data /app/src/raw-cache && npm run migrate"]
+
+  diagnose:
+    <<: *pipeline
+    profiles: [tools]
+    command: ["sh", "-c", "npm run diagnose -- --competition=$${COMPETITION}"]
+
+  inspect:
+    <<: *pipeline
+    profiles: [tools]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["npm run inspect"]
+
+  inspect-seasons:
+    <<: *pipeline
+    profiles: [tools]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["npm run inspect:seasons"]
+
+  backfill:
+    <<: *pipeline
+    profiles: [tools]
+    command:
+      - sh
+      - -c
+      - |
+        TO_VAL=$${TO:-$$FROM}
+        npm run backfill -- --competition=$${COMPETITION} --from=$${FROM} --to=$${TO_VAL}
+
+  enrich-stats:
+    <<: *pipeline
+    profiles: [tools]
+    command: ["sh", "-c", "npm run enrich-stats -- --competition=$${COMPETITION} --season=$${SEASON}"]
+
+  explore-statpal:
+    <<: *pipeline
+    profiles: [tools]
+    command: ["npm", "run", "explore-statpal"]
+
+  statpal-import:
+    <<: *pipeline
+    profiles: [tools]
+    command:
+      - sh
+      - -c
+      - |
+        EXTRA=""
+        if [ -n "$$SEASON" ]; then EXTRA="$$EXTRA --season=$$SEASON"; fi
+        npm run statpal-import -- --competition=$${COMPETITION}$$EXTRA
+
+  statpal-backfill-players:
+    <<: *pipeline
+    profiles: [tools]
+    command:
+      - sh
+      - -c
+      - |
+        EXTRA=""
+        if [ -n "$$IDS" ]; then EXTRA="$$EXTRA --ids=$$IDS"; fi
+        if [ -n "$$SEASON" ]; then EXTRA="$$EXTRA --season=$$SEASON"; fi
+        npm run statpal-backfill-players -- --competition=$${COMPETITION}$$EXTRA
+
+  statpal-backfill-transfers:
+    <<: *pipeline
+    profiles: [tools]
+    command:
+      - sh
+      - -c
+      - |
+        EXTRA="--limit=$${LIMIT:-200}"
+        if [ -n "$$IDS" ]; then EXTRA="--ids=$$IDS"; fi
+        if [ -n "$$PRIORITY" ]; then EXTRA="$$EXTRA --priority=$$PRIORITY"; fi
+        npm run statpal-backfill-transfers -- $$EXTRA
+
+  pregenerate-puzzles:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.tools
+    profiles: [tools]
+    environment:
+      DB_PATH: /data/football.db
+    volumes:
+      - ./data-pipeline/data:/data
+    working_dir: /app
+    command: ["npm", "run", "pregenerate-puzzles"]
+
+  backfill-match-details:
+    <<: *pipeline
+    profiles: [tools]
+    command:
+      - sh
+      - -c
+      - |
+        EXTRA="--only-shootouts"
+        if [ -n "$$LIMIT" ]; then EXTRA="$$EXTRA --limit=$$LIMIT"; fi
+        if [ -n "$$COMPETITION" ]; then EXTRA="$$EXTRA --competition=$$COMPETITION"; fi
+        if [ -n "$$IDS" ]; then EXTRA="$$EXTRA --ids=$$IDS"; fi
+        if [ "$$FORCE" = "1" ] || [ "$$FORCE" = "true" ]; then EXTRA="$$EXTRA --force=true"; fi
+        npm run backfill-match-details -- $$EXTRA
+
+  pilot:
+    <<: *pipeline
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$SEASON" ]; then
+          npm run pilot -- --competition=$${COMPETITION} --season=$${SEASON}
+        else
+          npm run pilot -- --competition=$${COMPETITION}
+        fi
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DB_PATH: /data/football.db
+    volumes:
+      - ./data-pipeline/data:/data
+    restart: unless-stopped

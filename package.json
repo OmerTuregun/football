@@ -1,0 +1,14 @@
+{
+  "name": "football",
+  "private": true,
+  "scripts": {
+    "migrate": "npm --prefix data-pipeline run migrate",
+    "diagnose": "npm --prefix data-pipeline run diagnose --",
+    "pilot": "npm --prefix data-pipeline run pilot --",
+    "backfill": "npm --prefix data-pipeline run backfill --",
+    "inspect": "npm --prefix data-pipeline run inspect",
+    "inspect:seasons": "npm --prefix data-pipeline run inspect:seasons --",
+    "web": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "football-data-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "migrate": "ts-node src/db/migrate.ts",
+    "diagnose": "ts-node src/scripts/diagnose-squad-data.ts",
+    "pilot": "ts-node src/scripts/pilot-fetch.ts",
+    "backfill": "ts-node src/scripts/backfill-seasons.ts",
+    "inspect": "ts-node src/scripts/inspect-db.ts",
+    "inspect:seasons": "ts-node src/scripts/inspect-seasons.ts",
+    "docker:build": "docker compose build",
+    "docker:diagnose": "docker compose --profile tools run --rm diagnose",
+    "docker:pilot": "docker compose run --rm pilot",
+    "docker:migrate": "docker compose --profile tools run --rm migrate",
+    "docker:inspect": "docker compose --profile tools run --rm inspect",
+    "docker:inspect:seasons": "docker compose --profile tools run --rm inspect-seasons",
+    "docker:backfill": "docker compose --profile tools run --rm backfill",
+    "enrich-stats": "ts-node src/scripts/enrich-player-stats.ts",
+    "docker:enrich-stats": "docker compose --profile tools run --rm enrich-stats",
+    "explore-free-api": "ts-node src/scripts/explore-free-football-api.ts",
+    "explore-statpal": "ts-node src/scripts/explore-statpal.ts",
+    "statpal-import": "ts-node src/scripts/statpal-import.ts",
+    "statpal-backfill-players": "ts-node src/scripts/statpal-backfill-players.ts",
+    "statpal-backfill-transfers": "ts-node src/scripts/statpal-backfill-transfers.ts",
+    "docker:explore-statpal": "docker compose --profile tools run --rm explore-statpal",
+    "docker:statpal-import": "docker compose --profile tools run --rm statpal-import",
+    "docker:statpal-backfill-players": "docker compose --profile tools run --rm --entrypoint \"\" statpal-import npm run statpal-backfill-players --",
+    "pregenerate-puzzles": "ts-node src/scripts/pregenerate-daily-puzzles.ts",
+    "backfill-match-details": "ts-node src/scripts/backfill-match-details.ts",
+    "docker:backfill-match-details": "docker compose --profile tools run --rm backfill-match-details"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
