@@ -54,3 +54,13 @@ export function seasonStartYear(season: string): number {
 export function getLeagueByCode(code: string): StatPalLeagueConfig | undefined {
   return STATPAL_LEAGUES.find((l) => l.code === code.toUpperCase());
 }
+
+/** football-data.org crest URLs for competitions created without emblem metadata. */
+export const STATPAL_LEAGUE_EMBLEMS: Partial<Record<StatPalCompetitionCode, string>> = {
+  SL: 'https://crests.football-data.org/524.png',
+  PPL: 'https://crests.football-data.org/PPL.png',
+  DED: 'https://crests.football-data.org/ED.png',
+  EL: 'https://crests.football-data.org/EL.png',
+  ECL: 'https://crests.football-data.org/2004.png',
+  CL: 'https://crests.football-data.org/CL.png',
+};

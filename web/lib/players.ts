@@ -7,7 +7,8 @@ import { buildPuzzleKey, getDailyIndex } from './daily-hash';
 import { getStoredPuzzle, savePuzzle } from './daily-puzzles';
 import { filterPoolByDifficulty, type DifficultyId } from './difficulty';
 import { getDb } from './db';
-import { getGameMode, MAX_GUESSES, INTERNATIONAL_COMPETITION_CODES, type GameModeId } from './game-modes';
+import { resolveLeagueEmblem, resolveNationalityFlag, resolveTeamCrest } from './football-assets';
+import { getGameMode, MAX_GUESSES, INTERNATIONAL_COMPETITION_CODES, NON_DOMESTIC_LEAGUE_CODES, type GameModeId } from './game-modes';
 import { normalizeForSearch } from './normalize-search';
 import { resolveCanonicalPlayerId, getPlayerIdentityCluster } from './player-identity';
 
@@ -23,20 +24,28 @@ export interface PlayerDisplay {
   id: number;
   name: string;
   nationality: string;
+  nationalityFlag: string | null;
   position: string;
+  league: string;
+  leagueCode: string;
+  leagueEmblem: string | null;
   club: string;
   clubCrest: string | null;
   age: number | null;
+  shirtNumber: number | null;
 }
 
 export type MatchStatus = 'match' | 'miss';
 export type AgeCompareStatus = 'match' | 'older' | 'younger' | 'unknown';
+export type NumberCompareStatus = AgeCompareStatus;
 
 export interface ComparisonResult {
   nationality: MatchStatus;
+  league: MatchStatus;
   position: MatchStatus;
   club: MatchStatus;
   age: AgeCompareStatus;
+  shirtNumber: NumberCompareStatus;
 }
 
 export interface GuessResponse {
@@ -75,18 +84,224 @@ function compareAge(
   return guessAge < targetAge ? 'older' : 'younger';
 }
 
+function compareNumber(
+  guessValue: number | null,
+  targetValue: number | null
+): NumberCompareStatus {
+  if (guessValue === null || targetValue === null) return 'unknown';
+  if (guessValue === targetValue) return 'match';
+  return guessValue < targetValue ? 'older' : 'younger';
+}
+
+type LeagueRef = {
+  id: number;
+  name: string;
+  code: string;
+  emblem: string | null;
+};
+
+let nationalityFlagCache: Map<string, string> | null = null;
+const latestLeagueCache = new Map<number, LeagueRef | null>();
+const latestShirtCache = new Map<number, number | null>();
+
+const NATIONALITY_FLAG_ALIASES: Record<string, string> = {
+  england: 'England',
+  scotland: 'Scotland',
+  wales: 'Wales',
+  'united states': 'United States',
+  usa: 'United States',
+  'south korea': 'Korea Republic',
+  korea: 'Korea Republic',
+  'côte d\'ivoire': 'Cote d\'Ivoire',
+  'cote d\'ivoire': 'Cote d\'Ivoire',
+};
+
+function nationalityFlagLookup(): Map<string, string> {
+  if (nationalityFlagCache) return nationalityFlagCache;
+  const map = new Map<string, string>();
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT area_name, area_flag FROM teams
+       WHERE area_name IS NOT NULL AND trim(area_name) != ''
+         AND area_flag IS NOT NULL AND trim(area_flag) != ''
+       ORDER BY id ASC`
+    )
+    .all() as Array<{ area_name: string; area_flag: string }>;
+  for (const row of rows) {
+    const key = row.area_name.trim().toLocaleLowerCase('en-US');
+    if (!map.has(key)) map.set(key, row.area_flag);
+  }
+  const competitionAreas = db
+    .prepare(
+      `SELECT area_name, area_flag FROM competitions
+       WHERE area_name IS NOT NULL AND trim(area_name) != ''
+         AND area_flag IS NOT NULL AND trim(area_flag) != ''`
+    )
+    .all() as Array<{ area_name: string; area_flag: string }>;
+  for (const row of competitionAreas) {
+    const key = row.area_name.trim().toLocaleLowerCase('en-US');
+    if (!map.has(key)) map.set(key, row.area_flag);
+  }
+  nationalityFlagCache = map;
+  return map;
+}
+
+export function getNationalityFlag(nationality: string): string | null {
+  const normalized = normalizeText(nationality);
+  if (normalized === 'Bilinmiyor') return null;
+  const lookup = nationalityFlagLookup();
+  const direct = lookup.get(normalized.toLocaleLowerCase('en-US'));
+  if (direct) return resolveNationalityFlag(normalized, direct);
+  const alias = NATIONALITY_FLAG_ALIASES[normalized.toLocaleLowerCase('en-US')];
+  if (alias) {
+    const fromAlias = lookup.get(alias.toLocaleLowerCase('en-US'));
+    return resolveNationalityFlag(normalized, fromAlias);
+  }
+  return resolveNationalityFlag(normalized, null);
+}
+
+export function getLatestLeague(playerId: number, modeId: GameModeId): LeagueRef | null {
+  void modeId;
+  const cacheKey = resolveCanonicalPlayerId(playerId);
+  if (latestLeagueCache.has(cacheKey)) {
+    return latestLeagueCache.get(cacheKey) ?? null;
+  }
+
+  const db = getDb();
+  const excludedCodes = NON_DOMESTIC_LEAGUE_CODES;
+  const excludedPlaceholders = excludedCodes.map(() => '?').join(',');
+  const cluster = getPlayerIdentityCluster(playerId);
+  const placeholders = cluster.map(() => '?').join(',');
+
+  const row = db
+    .prepare(
+      `SELECT c.id, c.name, c.code, c.emblem,
+              COALESCE(
+                s.start_date,
+                CASE WHEN s.season_year IS NOT NULL THEN printf('%04d-07-01', s.season_year) ELSE '' END,
+                ''
+              ) AS sortKey
+       FROM player_season_stats pss
+       JOIN seasons s ON s.id = pss.season_id
+       JOIN competitions c ON c.id = pss.competition_id
+       WHERE pss.player_id IN (${placeholders})
+         AND c.code NOT IN (${excludedPlaceholders})
+         AND c.name IS NOT NULL AND trim(c.name) != ''
+       ORDER BY
+         sortKey DESC,
+         COALESCE(s.season_year, 0) DESC,
+         COALESCE(pss.appearances, 0) DESC
+       LIMIT 1`
+    )
+    .get(...cluster, ...excludedCodes) as
+    | (LeagueRef & { sortKey: string })
+    | undefined;
+
+  const result = row
+    ? {
+        id: row.id,
+        name: row.name,
+        code: row.code?.trim() || row.name,
+        emblem: resolveLeagueEmblem(row.code, row.emblem),
+      }
+    : null;
+  latestLeagueCache.set(cacheKey, result);
+  return result;
+}
+
+export function getLatestShirtNumber(playerId: number, modeId: GameModeId): number | null {
+  const cacheKey = resolveCanonicalPlayerId(playerId);
+  if (latestShirtCache.has(cacheKey)) {
+    return latestShirtCache.get(cacheKey) ?? null;
+  }
+
+  const db = getDb();
+  const cluster = getPlayerIdentityCluster(playerId);
+  const placeholders = cluster.map(() => '?').join(',');
+  const club = getLatestClub(playerId, modeId);
+
+  if (club?.id) {
+    const fromCurrentClub = db
+      .prepare(
+        `SELECT ml.shirt_number,
+                COALESCE(m.utc_date, '') AS sortKey
+         FROM match_lineups ml
+         JOIN matches m ON m.id = ml.match_id
+         WHERE ml.player_id IN (${placeholders})
+           AND ml.team_id = ?
+           AND ml.shirt_number IS NOT NULL
+         ORDER BY sortKey DESC, ml.id DESC
+         LIMIT 1`
+      )
+      .get(...cluster, club.id) as { shirt_number: number } | undefined;
+
+    if (fromCurrentClub?.shirt_number != null) {
+      latestShirtCache.set(cacheKey, fromCurrentClub.shirt_number);
+      return fromCurrentClub.shirt_number;
+    }
+  }
+
+  const fromLineup = db
+    .prepare(
+      `SELECT ml.shirt_number,
+              COALESCE(m.utc_date, '') AS sortKey
+       FROM match_lineups ml
+       JOIN matches m ON m.id = ml.match_id
+       WHERE ml.player_id IN (${placeholders})
+         AND ml.shirt_number IS NOT NULL
+       ORDER BY sortKey DESC, ml.id DESC
+       LIMIT 1`
+    )
+    .get(...cluster) as { shirt_number: number } | undefined;
+
+  if (fromLineup?.shirt_number != null) {
+    latestShirtCache.set(cacheKey, fromLineup.shirt_number);
+    return fromLineup.shirt_number;
+  }
+
+  const fromStats = db
+    .prepare(
+      `SELECT pss.shirt_number,
+              COALESCE(
+                s.start_date,
+                CASE WHEN s.season_year IS NOT NULL THEN printf('%04d-07-01', s.season_year) ELSE '' END,
+                ''
+              ) AS sortKey
+       FROM player_season_stats pss
+       JOIN seasons s ON s.id = pss.season_id
+       WHERE pss.player_id IN (${placeholders})
+         AND pss.shirt_number IS NOT NULL
+       ORDER BY sortKey DESC, pss.id DESC
+       LIMIT 1`
+    )
+    .get(...cluster) as { shirt_number: number } | undefined;
+
+  const result = fromStats?.shirt_number ?? null;
+  latestShirtCache.set(cacheKey, result);
+  return result;
+}
+
 function toPlayerDisplay(
   player: PlayerRow,
-  club: { id: number; name: string; crest: string | null } | null
+  club: { id: number; name: string; crest: string | null } | null,
+  league: LeagueRef | null,
+  shirtNumber: number | null
 ): PlayerDisplay {
+  const nationality = normalizeText(player.nationality);
   return {
     id: player.id,
     name: player.name,
-    nationality: normalizeText(player.nationality),
+    nationality,
+    nationalityFlag: getNationalityFlag(nationality),
     position: normalizeText(player.position),
+    league: league?.name ?? 'Bilinmiyor',
+    leagueCode: league?.code ?? '?',
+    leagueEmblem: league?.emblem ?? null,
     club: club?.name ?? 'Bilinmiyor',
     clubCrest: club?.crest ?? null,
     age: getAge(player.date_of_birth),
+    shirtNumber,
   };
 }
 
@@ -211,8 +426,11 @@ export function searchPlayers(
 
   // Club lookup only for the few results we return (biggest latency win)
   return ranked.slice(0, limit).map(({ row }) => {
-    const club = getLatestClub(resolveCanonicalPlayerId(row.id), modeId);
-    return toPlayerDisplay(row, club);
+    const canonicalId = resolveCanonicalPlayerId(row.id);
+    const club = getLatestClub(canonicalId, modeId);
+    const league = getLatestLeague(canonicalId, modeId);
+    const shirtNumber = getLatestShirtNumber(canonicalId, modeId);
+    return toPlayerDisplay(row, club, league, shirtNumber);
   });
 }
 
@@ -266,9 +484,11 @@ function enrichClubCrest(club: {
 }): { id: number; name: string; crest: string | null } {
   if (club.crest && club.crest.trim()) return club;
   const key = canonicalClubKey(club.name);
-  if (!key) return club;
-  const fromCanonical = getClubCrest(key) ?? crestLookupByCanonical().get(key) ?? null;
-  if (fromCanonical) return { ...club, crest: fromCanonical };
+  const fromCanonical = key
+    ? (getClubCrest(key) ?? crestLookupByCanonical().get(key) ?? null)
+    : null;
+  const crest = resolveTeamCrest(club.name, fromCanonical);
+  if (crest) return { ...club, crest };
   return club;
 }
 
@@ -299,13 +519,15 @@ export function getLatestClub(
        FROM match_lineups ml
        JOIN matches m ON m.id = ml.match_id
        JOIN teams t ON t.id = ml.team_id
+       JOIN competitions c ON c.id = m.competition_id
        LEFT JOIN seasons s ON s.id = m.season_id
        WHERE ml.player_id IN (${placeholders})
+         AND c.code NOT IN (${intlPlaceholders})
          AND t.name IS NOT NULL AND trim(t.name) != ''
        ORDER BY sortKey DESC, ml.id DESC
        LIMIT 1`
     )
-    .get(...cluster) as ClubRef | undefined;
+    .get(...cluster, ...INTERNATIONAL_COMPETITION_CODES) as ClubRef | undefined;
   if (fromLineups?.name) signals.push(fromLineups);
 
   const fromStats = db
@@ -373,11 +595,34 @@ export function getLatestClub(
     return null;
   }
 
-  signals.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  // Prefer recent lineups, then season stats; transfers only when nothing else exists.
+  const priority = (signal: ClubRef): number => {
+    const fromLineup = fromLineups && signal.id === fromLineups.id && signal.sortKey === fromLineups.sortKey;
+    const fromStat = fromStats && signal.id === fromStats.id && signal.sortKey === fromStats.sortKey;
+    if (fromLineup) return 3;
+    if (fromStat) return 2;
+    return 1;
+  };
+
+  signals.sort((a, b) => {
+    const byDate = b.sortKey.localeCompare(a.sortKey);
+    if (byDate !== 0) return byDate;
+    return priority(b) - priority(a);
+  });
   const latest = signals[0];
   const result = enrichClubCrest({ id: latest.id, name: latest.name, crest: latest.crest });
   latestClubCache.set(cacheKey, result);
   return result;
+}
+
+export function buildPlayerDisplay(playerId: number, modeId: GameModeId): PlayerDisplay | null {
+  const row = getPlayerRowById(playerId);
+  if (!row) return null;
+  const canonicalId = resolveCanonicalPlayerId(playerId);
+  const club = getLatestClub(canonicalId, modeId);
+  const league = getLatestLeague(canonicalId, modeId);
+  const shirtNumber = getLatestShirtNumber(canonicalId, modeId);
+  return toPlayerDisplay(row, club, league, shirtNumber);
 }
 
 export function getPlayerById(
@@ -385,7 +630,15 @@ export function getPlayerById(
   modeId: GameModeId
 ): PlayerRow | null {
   const pool = getModePlayerPool(modeId);
-  return pool.find((p) => p.id === playerId) ?? null;
+  const direct = pool.find((p) => p.id === playerId);
+  if (direct) return direct;
+
+  const cluster = getPlayerIdentityCluster(resolveCanonicalPlayerId(playerId));
+  for (const id of cluster) {
+    const hit = pool.find((p) => p.id === id);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export function getDailyPlayer(ctx: PuzzleContext): PlayerRow {
@@ -416,8 +669,11 @@ export function getDailyPlayer(ctx: PuzzleContext): PlayerRow {
 
 export function revealDailyPlayer(ctx: PuzzleContext): PlayerDisplay {
   const target = getDailyPlayer(ctx);
-  const club = getLatestClub(target.id, ctx.modeId);
-  return toPlayerDisplay(target, club);
+  const canonicalId = resolveCanonicalPlayerId(target.id);
+  const club = getLatestClub(canonicalId, ctx.modeId);
+  const league = getLatestLeague(canonicalId, ctx.modeId);
+  const shirtNumber = getLatestShirtNumber(canonicalId, ctx.modeId);
+  return toPlayerDisplay(target, club, league, shirtNumber);
 }
 
 export function compareGuess(
@@ -434,19 +690,27 @@ export function compareGuess(
 
   const targetClub = getLatestClub(target.id, ctx.modeId);
   const guessClub = getLatestClub(guess.id, ctx.modeId);
+  const targetLeague = getLatestLeague(target.id, ctx.modeId);
+  const guessLeague = getLatestLeague(guess.id, ctx.modeId);
+  const targetShirt = getLatestShirtNumber(target.id, ctx.modeId);
+  const guessShirt = getLatestShirtNumber(guess.id, ctx.modeId);
 
-  const targetDisplay = toPlayerDisplay(target, targetClub);
-  const guessDisplay = toPlayerDisplay(guess, guessClub);
+  const targetDisplay = toPlayerDisplay(target, targetClub, targetLeague, targetShirt);
+  const guessDisplay = toPlayerDisplay(guess, guessClub, guessLeague, guessShirt);
 
   const comparison: ComparisonResult = {
     nationality: compareText(guess.nationality, target.nationality),
+    league:
+      guessLeague && targetLeague && guessLeague.id === targetLeague.id ? 'match' : 'miss',
     position: compareText(guess.position, target.position),
     club:
       guessClub && targetClub && guessClub.id === targetClub.id ? 'match' : 'miss',
     age: compareAge(getAge(guess.date_of_birth), getAge(target.date_of_birth)),
+    shirtNumber: compareNumber(guessShirt, targetShirt),
   };
 
-  const won = guess.id === target.id;
+  const won =
+    resolveCanonicalPlayerId(guess.id) === resolveCanonicalPlayerId(target.id);
   const gameOver = won || attemptNumber >= MAX_GUESSES;
 
   return {

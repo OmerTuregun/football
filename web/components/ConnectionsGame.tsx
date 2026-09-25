@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 import {
@@ -10,8 +11,6 @@ import {
   shouldPersistGameState,
 } from '@/lib/daily-access';
 import {
-  CONNECTIONS_COLORS,
-  CONNECTIONS_COLOR_LABELS,
   CONNECTIONS_GROUP_SIZE,
   CONNECTIONS_MISTAKES,
   type ConnectionsColor,
@@ -417,7 +416,12 @@ export function ConnectionsGame() {
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
         <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[280px]">
           <header className="mb-5">
-            <h1 className="text-[28px] font-semibold tracking-tight text-ink">Bağlantılar</h1>
+            <GameTitle
+              gameId="connections"
+              className="text-[28px] font-semibold tracking-tight text-ink"
+            >
+              Bağlantılar
+            </GameTitle>
             <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
               16 oyuncuyu 4 gruba ayır. Her grubun en az iki ortak noktası var — 4 kart seçip
               gönder.
@@ -459,15 +463,6 @@ export function ConnectionsGame() {
                 />
               ))}
             </div>
-          </div>
-
-          <div className="mb-4 space-y-1.5 text-[12px] text-muted">
-            {CONNECTIONS_COLORS.map((c) => (
-              <div key={c} className="flex items-center gap-2">
-                <span className={`h-3 w-3 rounded-sm border ${COLOR_STYLES[c]}`} />
-                <span>{CONNECTIONS_COLOR_LABELS[c]}</span>
-              </div>
-            ))}
           </div>
 
           {status === 'playing' && (
@@ -561,28 +556,12 @@ export function ConnectionsGame() {
                       type="button"
                       onClick={() => toggleSelect(id)}
                       disabled={status !== 'playing' || busy}
-                      className={`flex min-h-[88px] flex-col items-center justify-center gap-1.5 rounded-card border px-2 py-3 text-center transition ${
+                      className={`flex min-h-[72px] items-center justify-center rounded-card border px-2 py-3 text-center transition ${
                         isSelected
                           ? 'border-ink bg-ink text-white shadow-sm'
                           : 'border-line bg-white text-ink hover:border-brand hover:bg-brand-light/40'
                       }`}
                     >
-                      {p.clubCrest ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.clubCrest}
-                          alt=""
-                          width={22}
-                          height={22}
-                          className={`h-[22px] w-[22px] object-contain ${isSelected ? 'brightness-0 invert' : ''}`}
-                        />
-                      ) : (
-                        <span
-                          className={`h-[22px] w-[22px] rounded-full ${
-                            isSelected ? 'bg-white/30' : 'bg-sidebar'
-                          }`}
-                        />
-                      )}
                       <span className="line-clamp-2 text-[12px] font-semibold leading-tight sm:text-[13px]">
                         {p.name}
                       </span>

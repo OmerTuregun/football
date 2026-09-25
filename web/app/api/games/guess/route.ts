@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getTodayDateString } from '@/lib/daily-hash';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
 import { isValidDifficulty } from '@/lib/difficulty-config';
 import { isValidGameMode } from '@/lib/game-modes';
 import { compareGuess } from '@/lib/players';
@@ -54,7 +54,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'session must be a non-negative integer' }, { status: 400 });
   }
 
-  const puzzleDate = date ?? getTodayDateString();
+  const dateOrErr = playableDateOrResponse(date);
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+  const puzzleDate = dateOrErr;
 
   try {
     const result = compareGuess(playerId, { modeId: mode, difficulty, date: puzzleDate, session }, attemptNumber);

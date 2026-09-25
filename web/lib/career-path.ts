@@ -1,13 +1,13 @@
 import 'server-only';
 
-import { getAge } from './age';
 import { buildPuzzleKey, getDailyIndex } from './daily-hash';
 import { getStoredPuzzle, savePuzzle } from './daily-puzzles';
 import { type DifficultyId } from './difficulty';
 import { getDb } from './db';
 import { MAX_GUESSES, type GameModeId } from './game-modes';
+import { resolveTeamCrest } from './football-assets';
 import {
-  getLatestClub,
+  buildPlayerDisplay,
   getPlayerById,
   getPlayerPool,
   type PlayerDisplay,
@@ -44,22 +44,8 @@ const MIN_CLUBS_BY_DIFFICULTY: Record<DifficultyId, number> = {
 type EligibleEntry = { player: PlayerRow; path: ClubStop[] };
 const eligibleCache = new Map<string, EligibleEntry[]>();
 
-function normalizeText(value: string | null | undefined, fallback = 'Bilinmiyor'): string {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallback;
-}
-
 function toDisplay(player: PlayerRow, modeId: GameModeId): PlayerDisplay {
-  const club = getLatestClub(player.id, modeId);
-  return {
-    id: player.id,
-    name: player.name,
-    nationality: normalizeText(player.nationality),
-    position: normalizeText(player.position),
-    club: club?.name ?? 'Bilinmiyor',
-    clubCrest: club?.crest ?? null,
-    age: getAge(player.date_of_birth),
-  };
+  return buildPlayerDisplay(player.id, modeId)!;
 }
 
 function resolveTeam(
@@ -72,12 +58,16 @@ function resolveTeam(
       .prepare(`SELECT id, name, crest FROM teams WHERE id = ?`)
       .get(teamId) as { id: number; name: string; crest: string | null } | undefined;
     if (row) {
-      return { teamId: row.id, name: row.name, crest: row.crest };
+      return {
+        teamId: row.id,
+        name: row.name,
+        crest: resolveTeamCrest(row.name, row.crest),
+      };
     }
   }
   const name = fallbackName?.trim();
   if (!name) return null;
-  return { teamId: teamId ?? null, name, crest: null };
+  return { teamId: teamId ?? null, name, crest: resolveTeamCrest(name, null) };
 }
 
 /** Build chronological club path from transfers, falling back to season stats. */
@@ -143,7 +133,7 @@ export function getCareerPath(playerId: number): ClubStop[] {
     pushUnique({
       teamId: row.team_id,
       name: row.team_name,
-      crest: row.crest,
+      crest: resolveTeamCrest(row.team_name, row.crest),
     });
   }
 

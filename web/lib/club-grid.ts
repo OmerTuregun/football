@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { getAge } from './age';
 import { eliteClubKeys, getCanonicalClub, knownClubKeys } from './club-canonical';
 import { GRID_SIZE } from './club-grid-shared';
 import {
@@ -13,10 +12,9 @@ import {
 import { buildPuzzleKey, getDailyIndex } from './daily-hash';
 import { getStoredPuzzle, savePuzzle } from './daily-puzzles';
 import { type DifficultyId } from './difficulty-config';
-import { getDb } from './db';
 import type { GameModeId } from './game-modes';
 import { resolveCanonicalPlayerId } from './player-identity';
-import { getLatestClub, type PlayerDisplay } from './players';
+import { buildPlayerDisplay, type PlayerDisplay } from './players';
 
 export { GRID_SIZE } from './club-grid-shared';
 
@@ -158,33 +156,7 @@ function toAxis(key: string): ClubAxis {
 }
 
 function playerDisplayById(playerId: number, modeId: GameModeId): PlayerDisplay | null {
-  const db = getDb();
-  const row = db
-    .prepare(
-      `SELECT id, name, nationality, position, date_of_birth
-       FROM players WHERE id = ?`
-    )
-    .get(playerId) as
-    | {
-        id: number;
-        name: string;
-        nationality: string | null;
-        position: string | null;
-        date_of_birth: string | null;
-      }
-    | undefined;
-
-  if (!row) return null;
-  const club = getLatestClub(playerId, modeId);
-  return {
-    id: row.id,
-    name: row.name,
-    nationality: row.nationality?.trim() || 'Bilinmiyor',
-    position: row.position?.trim() || 'Bilinmiyor',
-    club: club?.name ?? 'Bilinmiyor',
-    clubCrest: club?.crest ?? null,
-    age: getAge(row.date_of_birth),
-  };
+  return buildPlayerDisplay(playerId, modeId);
 }
 
 export function createClubGridPuzzle(

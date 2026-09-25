@@ -53,7 +53,6 @@ export interface OnlukPuzzlePublic {
   seasonTo: number;
   date: string;
   session: number;
-  difficulty: DifficultyId;
 }
 
 export interface OnlukGuessResult {
@@ -141,6 +140,28 @@ function formatValue(unit: string, value: number): string {
   return `${value} maç`;
 }
 
+/** Combine split DB rows (football-data + StatPal) before ranking. */
+function mergeRankRowsByCanonical(rows: RankRow[]): RankRow[] {
+  const byCanonical = new Map<number, RankRow>();
+  for (const row of rows) {
+    const canonicalId = resolveCanonicalPlayerId(row.playerId);
+    const existing = byCanonical.get(canonicalId);
+    if (existing) {
+      existing.value += row.value;
+      if (row.name.length > existing.name.length) existing.name = row.name;
+    } else {
+      byCanonical.set(canonicalId, {
+        playerId: canonicalId,
+        name: row.name,
+        value: row.value,
+      });
+    }
+  }
+  return [...byCanonical.values()].sort(
+    (a, b) => b.value - a.value || a.name.localeCompare(b.name, 'tr')
+  );
+}
+
 function toAnswers(rows: RankRow[], unit: string): OnlukAnswer[] {
   return rows.slice(0, ONLUK_SIZE).map((r, i) => ({
     rank: i + 1,
@@ -177,6 +198,8 @@ function clubAppearanceSpec(
     .all(...teamIds, from, to, ONLUK_SIZE + 5) as RankRow[];
 
   if (rows.length < ONLUK_SIZE) return null;
+  const merged = mergeRankRowsByCanonical(rows);
+  if (merged.length < ONLUK_SIZE) return null;
   const label = getClubLabel(clubKey);
   return {
     kind: 'club-appearances',
@@ -185,7 +208,7 @@ function clubAppearanceSpec(
     crestA: getClubCrest(clubKey),
     crestB: null,
     unit: 'maç',
-    rows: rows.slice(0, ONLUK_SIZE),
+    rows: merged.slice(0, ONLUK_SIZE),
   };
 }
 
@@ -221,6 +244,8 @@ function teammateSpec(
     .all(anchorId, from, to, ONLUK_SIZE + 5) as RankRow[];
 
   if (rows.length < ONLUK_SIZE) return null;
+  const merged = mergeRankRowsByCanonical(rows);
+  if (merged.length < ONLUK_SIZE) return null;
 
   // Crest: most common team with this player in window
   const team = db
@@ -246,7 +271,7 @@ function teammateSpec(
     crestA: team?.crest ?? null,
     crestB: null,
     unit: 'ortak maç',
-    rows: rows.slice(0, ONLUK_SIZE),
+    rows: merged.slice(0, ONLUK_SIZE),
   };
 }
 
@@ -292,8 +317,10 @@ function competitionGoalsSpec(
     .all(code, from, to, ...eliteTeamIds, ONLUK_SIZE + 5) as RankRow[];
 
   if (rows.length < ONLUK_SIZE) return null;
+  const merged = mergeRankRowsByCanonical(rows);
+  if (merged.length < ONLUK_SIZE) return null;
   // Require a minimally believable board (avoid all 1-goal boards)
-  if (rows[0].value < 3) return null;
+  if (merged[0]!.value < 3) return null;
 
   return {
     kind: 'competition-goals',
@@ -302,7 +329,7 @@ function competitionGoalsSpec(
     crestA: null,
     crestB: null,
     unit: 'gol',
-    rows: rows.slice(0, ONLUK_SIZE),
+    rows: merged.slice(0, ONLUK_SIZE),
   };
 }
 
@@ -408,8 +435,7 @@ export function createOnlukPuzzle(
 export function toPublicPuzzle(
   puzzle: OnlukPuzzle,
   date: string,
-  session: number,
-  difficulty: DifficultyId
+  session: number
 ): OnlukPuzzlePublic {
   return {
     kind: puzzle.kind,
@@ -425,7 +451,6 @@ export function toPublicPuzzle(
     seasonTo: puzzle.seasonTo,
     date,
     session,
-    difficulty,
   };
 }
 
@@ -504,7 +529,7 @@ export function revealOnlukAnswers(
 ): { puzzle: OnlukPuzzlePublic; answers: OnlukAnswer[] } {
   const puzzle = createOnlukPuzzle(difficulty, date, session);
   return {
-    puzzle: toPublicPuzzle(puzzle, date, session, difficulty),
+    puzzle: toPublicPuzzle(puzzle, date, session),
     answers: puzzle.answers,
   };
 }

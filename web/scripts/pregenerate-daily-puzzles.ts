@@ -22,6 +22,7 @@ import { DIFFICULTIES } from '../lib/difficulty-config';
 import { GAME_MODES } from '../lib/game-modes';
 import { createMissingXiPuzzle } from '../lib/missing-xi';
 import { createOnlukPuzzle } from '../lib/onluk';
+import { ONLUK_DIFFICULTY } from '../lib/onluk-shared';
 import { getDailyPlayer, type PuzzleContext } from '../lib/players';
 
 const MISSING_XI_MODES = GAME_MODES.filter(
@@ -44,15 +45,15 @@ async function main(): Promise<void> {
   // DB önbelleği: son 10 gün (bugün dahil) + ekstra ileri günler
   for (let day = -pastDays; day <= horizon; day++) {
     const date = addDays(today, day);
-    for (const diff of DIFFICULTIES) {
-      try {
-        createOnlukPuzzle(diff.id, date, 0);
-        created++;
-      } catch (e) {
-        console.warn('[onluk]', date, diff.id, e);
-        errors++;
-      }
+    try {
+      createOnlukPuzzle(ONLUK_DIFFICULTY, date, 0);
+      created++;
+    } catch (e) {
+      console.warn('[onluk]', date, e);
+      errors++;
+    }
 
+    for (const diff of DIFFICULTIES) {
       try {
         createClubGridPuzzle('general', diff.id, date, 0);
         created++;

@@ -7,6 +7,7 @@ import { type DifficultyId } from '@/lib/difficulty-config';
 import { shouldPersistGameState } from '@/lib/daily-access';
 import { GAME_MODES, MAX_GUESSES, type GameModeId } from '@/lib/game-modes';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 import type { PlayerDisplay } from '@/lib/players';
@@ -438,46 +439,12 @@ export function CareerPathGame() {
     }
   }
 
-  async function handlePlayAgain() {
-    const nextSession = session + 1;
-    setSession(nextSession);
-    setPuzzleLoading(true);
-    setGuesses([]);
-    setStatus('playing');
-    setRevealed(null);
-    setGaveUp(false);
-    setConfirmGiveUp(false);
-    setQuery('');
-    setSelected(null);
-    setSuggestions([]);
-    setError(null);
-    setDropdownOpen(false);
-
-    try {
-      const nextClubs = await fetchPuzzle(mode, difficulty, nextSession);
-      setClubs(nextClubs ?? []);
-      if (nextClubs) {
-        saveState({
-          date: date,
-          mode,
-          difficulty,
-          session: nextSession,
-          guesses: [],
-          clubs: nextClubs,
-          status: 'playing',
-        });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulmaca yüklenemedi');
-    } finally {
-      setPuzzleLoading(false);
-    }
-  }
-
   return (
     <div className="relative mx-auto max-w-xl">
       <header className="relative mb-8">
-        <h1 className="text-[20px] font-medium text-ink">Kariyer rotası</h1>
+        <GameTitle gameId="career-path" className="text-[20px] font-medium text-ink" size="sm">
+          Kariyer rotası
+        </GameTitle>
         <p className="mt-1 text-[13px] text-muted">
           Kulüp yolunu gör, oyuncuyu {MAX_GUESSES} denemede bul.
         </p>
@@ -656,13 +623,6 @@ export function CareerPathGame() {
             {revealed.nationality}, {revealed.position}, {revealed.club}
             {revealed.age !== null ? `, ${revealed.age} yaş` : ''}
           </p>
-          <button
-            type="button"
-            onClick={() => void handlePlayAgain()}
-            className="mt-4 rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white transition hover:bg-brand-dark"
-          >
-            Tekrar oyna
-          </button>
         </div>
       )}
 

@@ -31,12 +31,11 @@ import {
   collectTeamIdsFromMatches,
   collectUniqueDates,
   emptyImportStats,
-  parseBirthdate,
-  parseFloatOrNull,
   parseIntOrNull,
   parseMatchDate,
   type ImportStats,
 } from '../import/statpalRepository';
+import { ingestStatPalPlayer } from '../import/statpalPlayerIngest';
 import { mapInPool, parseArgs } from '../utils';
 
 interface PhaseCursor {
@@ -173,100 +172,16 @@ async function phaseTeams(
   onProgress();
 }
 
-function mapStatRow(row: Record<string, unknown>): Record<string, number | null> {
-  return {
-    appearances: parseIntOrNull(row.appearances ?? row.appearences),
-    goals: parseIntOrNull(row.goals),
-    assists: parseIntOrNull(row.assists),
-    minutes_played: parseIntOrNull(row.minutes_played),
-    yellow_cards: parseIntOrNull(row.yellowcards ?? row.yellow_cards),
-    red_cards: parseIntOrNull(row.redcards ?? row.red_cards),
-    key_passes: parseIntOrNull(row.key_passes),
-    pass_attempts: parseIntOrNull(row.pass_attempts),
-    pass_success: parseIntOrNull(row.pass_success),
-    tackles: parseIntOrNull(row.tackles),
-    duels_total: parseIntOrNull(row.duels_total),
-    duels_won: parseIntOrNull(row.duels_won),
-    dribble_attempts: parseIntOrNull(row.dribble_attempts),
-    dribble_success: parseIntOrNull(row.dribble_success),
-    rating: parseFloatOrNull(row.rating),
-    starting_lineups: parseIntOrNull(row.starting_lineups),
-    substitute_in: parseIntOrNull(row.substitute_in),
-  };
-}
-
 function ingestPlayer(
   repo: StatPalRepository,
-  ctx: SeasonContext,
+  _ctx: SeasonContext,
   statpalPlayerId: string,
   p: Record<string, unknown>
 ): void {
-  const playerId = repo.upsertPlayer(String(p.id ?? statpalPlayerId), String(p.name ?? 'Unknown'), {
-    firstName: p.firstname ? String(p.firstname) : undefined,
-    lastName: p.lastname ? String(p.lastname) : undefined,
-    birthdate: parseBirthdate(p.birthdate ? String(p.birthdate) : undefined) ?? undefined,
-    nationality: p.nationality ? String(p.nationality) : undefined,
-    position: p.position ? String(p.position) : undefined,
-    marketValueEur: parseIntOrNull(p.market_value_eur),
-  });
+  const result = ingestStatPalPlayer(repo, statpalPlayerId, p);
   globalStats.players += 1;
-  repo.markPlayerFetched(statpalPlayerId, playerId);
-
-  const statBlocks = [
-    p.club_league_statistics,
-    p.club_domestic_cup_statistics,
-    p.club_intl_cup_statistics,
-  ] as Array<{ club?: Array<Record<string, unknown>> } | undefined>;
-
-  for (const block of statBlocks) {
-    for (const row of block?.club ?? []) {
-      const teamStatpalId = row.team_id ? String(row.team_id) : null;
-      if (!teamStatpalId) continue;
-      const teamId = repo.upsertTeam(teamStatpalId, String(row.team_name ?? 'Unknown'));
-      const rowSeason = String(row.season ?? ctx.season);
-      if (rowSeason !== ctx.season && !rowSeason.includes(ctx.season.split('-')[0])) continue;
-
-      repo.upsertPlayerSeasonStats(
-        playerId,
-        teamId,
-        ctx.seasonId,
-        ctx.competitionId,
-        rowSeason,
-        String(row.league_id ?? ctx.league.leagueId),
-        mapStatRow(row)
-      );
-    }
-  }
-
-  const transfers = (p.transfers as Array<Record<string, unknown>> | undefined) ?? [];
-  for (const tr of transfers) {
-    if (
-      repo.insertTransfer(playerId, {
-        date: tr.date ? String(tr.date) : undefined,
-        type: tr.type ? String(tr.type) : undefined,
-        price: tr.price ? String(tr.price) : undefined,
-        from: tr.from ? String(tr.from) : undefined,
-        fromId: tr.from_id ? String(tr.from_id) : undefined,
-        to: tr.to ? String(tr.to) : undefined,
-        toId: tr.to_id ? String(tr.to_id) : undefined,
-      })
-    ) {
-      globalStats.transfers += 1;
-    }
-  }
-
-  const trophiesRaw = p.trophies;
-  const trophyList: Array<Record<string, unknown>> = [];
-  if (Array.isArray(trophiesRaw)) {
-    trophyList.push(...trophiesRaw);
-  } else if (trophiesRaw && typeof trophiesRaw === 'object') {
-    for (const [key, val] of Object.entries(trophiesRaw as Record<string, unknown>)) {
-      if (val && typeof val === 'object') {
-        trophyList.push({ ...(val as Record<string, unknown>), league: key });
-      }
-    }
-  }
-  globalStats.trophies += repo.replacePlayerTrophies(playerId, trophyList);
+  globalStats.transfers += result.transfers;
+  globalStats.trophies += result.trophies;
 }
 
 async function phasePlayers(
@@ -635,17 +550,22 @@ async function phaseTeammates(ctx: SeasonContext, repo: StatPalRepository): Prom
 async function runPhase(
   phase: StatPalPhase,
   ctx: SeasonContext,
-  repo: StatPalRepository
+  repo: StatPalRepository,
+  force = false
 ): Promise<'done' | 'partial'> {
   const existing = repo.getFetchState(ctx.league.code, ctx.season, phase);
-  if (existing?.status === 'done') {
+  if (existing?.status === 'done' && !force) {
     console.log(`  [skip] ${phase} already done`);
     return 'done';
   }
 
   const cursor: PhaseCursor = existing?.cursor_json ? JSON.parse(existing.cursor_json) : {};
+  if (force && phase === 'players') {
+    cursor.playerIndex = 0;
+    cursor.failedPlayerIds = [];
+  }
 
-  console.log(`\n  >> phase ${phase}`);
+  console.log(`\n  >> phase ${phase}${force ? ' (force)' : ''}`);
   repo.setFetchState(ctx.league.code, ctx.season, phase, 'partial', cursor);
 
   const saveProgress = (): void => {
@@ -685,12 +605,13 @@ async function runPhase(
 async function importCompetitionSeason(
   repo: StatPalRepository,
   league: StatPalLeagueConfig,
-  season: string
+  season: string,
+  forcePlayers = false
 ): Promise<void> {
   const allDone = STATPAL_PHASES.every(
     (phase) => repo.getFetchState(league.code, season, phase)?.status === 'done'
   );
-  if (allDone) {
+  if (allDone && !forcePlayers) {
     console.log(`\n[skip] ${league.code} ${season} — all phases done`);
     return;
   }
@@ -704,6 +625,11 @@ async function importCompetitionSeason(
 
   for (const phase of STATPAL_PHASES) {
     if (stoppedByQuota) break;
+    if (forcePlayers) {
+      if (phase !== 'players') continue;
+      await runPhase(phase, ctx, repo, true);
+      continue;
+    }
     await runPhase(phase, ctx, repo);
   }
 
@@ -742,12 +668,13 @@ async function main(): Promise<void> {
   }
 
   const seasons = args.season ? [args.season] : [...STATPAL_TARGET_SEASONS];
+  const forcePlayers = args['force-players'] === 'true';
 
   try {
     for (const league of leagues) {
       for (const season of seasons) {
         if (stoppedByQuota) break;
-        await importCompetitionSeason(repo, league, season);
+        await importCompetitionSeason(repo, league, season, forcePlayers);
       }
     }
   } catch (err) {

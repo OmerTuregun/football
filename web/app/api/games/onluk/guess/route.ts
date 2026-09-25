@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getTodayDateString } from '@/lib/daily-hash';
-import { isValidDifficulty } from '@/lib/difficulty-config';
-import { ONLUK_LIVES, ONLUK_SIZE } from '@/lib/onluk-shared';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
+import { ONLUK_LIVES, ONLUK_SIZE, ONLUK_DIFFICULTY } from '@/lib/onluk-shared';
 import { guessOnluk } from '@/lib/onluk';
 
 export const dynamic = 'force-dynamic';
 
 interface GuessBody {
-  difficulty?: string;
   date?: string;
   session?: number;
   playerId?: number;
@@ -26,7 +24,6 @@ export async function POST(request: NextRequest) {
   }
 
   const {
-    difficulty = 'easy',
     date,
     session = 0,
     playerId,
@@ -35,9 +32,6 @@ export async function POST(request: NextRequest) {
     streakCorrect = 0,
   } = body;
 
-  if (!isValidDifficulty(difficulty)) {
-    return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 });
-  }
   if (typeof session !== 'number' || session < 0 || !Number.isInteger(session)) {
     return NextResponse.json({ error: 'session must be a non-negative integer' }, { status: 400 });
   }
@@ -67,10 +61,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid placedIds length' }, { status: 400 });
   }
 
+  const dateOrErr = playableDateOrResponse(date);
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+
   try {
     const result = guessOnluk({
-      difficulty,
-      date: date ?? getTodayDateString(),
+      difficulty: ONLUK_DIFFICULTY,
+      date: dateOrErr,
       session,
       playerId,
       placedIds,

@@ -5,7 +5,40 @@
 body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   color: #1a1a18;
-  background: #ffffff;
+  background: #f4f6f1;
+}
+
+/* Soft pitch atmosphere — low contrast, not a stock photo */
+.site-shell {
+  background:
+    radial-gradient(ellipse 90% 60% at 10% -10%, rgba(59, 109, 17, 0.1), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 0%, rgba(30, 74, 110, 0.06), transparent 50%),
+    linear-gradient(180deg, #f7f8f4 0%, #eef2ea 48%, #f5f6f2 100%);
+}
+
+.site-main {
+  background-image:
+    linear-gradient(rgba(244, 246, 241, 0.88), rgba(244, 246, 241, 0.92)),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 47px,
+      rgba(59, 109, 17, 0.035) 47px,
+      rgba(59, 109, 17, 0.035) 48px
+    ),
+    radial-gradient(circle at 50% 120%, rgba(59, 109, 17, 0.07), transparent 55%);
+  background-attachment: local;
+}
+
+.site-hero {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(234, 243, 222, 0.75) 55%, rgba(255, 255, 255, 0.85) 100%),
+    repeating-linear-gradient(
+      -12deg,
+      transparent 0 14px,
+      rgba(59, 109, 17, 0.04) 14px 15px
+    );
+  box-shadow: 0 10px 30px -18px rgba(42, 36, 24, 0.35);
 }
 
 @keyframes xi-fade-up {
@@ -295,7 +328,23 @@ body {
   }
 }
 
-.onluk-fly {
-  animation: onluk-fly 0.42s ease-in forwards;
+@keyframes dp-card-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-28px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dp-card-drop {
+  animation: dp-card-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dp-guess-row {
+  background: #fafaf8;
+  border: 1px solid #e8e8e6;
 }
 

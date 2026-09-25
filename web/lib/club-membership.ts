@@ -99,17 +99,31 @@ function ensureCrests(): Map<string, string | null> {
   const map = new Map<string, string | null>();
 
   for (const club of CANONICAL_CLUBS) {
-    const needles = [...(club.crestNeedles ?? []), ...club.needles, club.label.toLowerCase()];
+    const preferred = (club.crestNeedles ?? []).map((n) => n.toLowerCase());
+    const needles = [...preferred, ...club.needles, club.label.toLowerCase()];
     let found: string | null = null;
-    for (const team of teams) {
-      const key = team.name.normalize('NFC').toLocaleLowerCase('tr-TR');
-      if (needles.some((n) => key.includes(n.toLowerCase()))) {
+
+    // Prefer exact crestNeedles (e.g. "fc barcelona") before loose includes.
+    const tryMatch = (strictPreferred: boolean): string | null => {
+      for (const team of teams) {
+        const key = team.name.normalize('NFC').toLocaleLowerCase('tr-TR');
         if (club.key === 'arsenal' && (key.includes('tula') || key.includes('tivat'))) continue;
         if (club.key === 'psg' && key.includes('paris fc')) continue;
-        found = team.crest;
-        break;
+        if (club.key === 'barcelona' && (key.includes('espanyol') || key.includes('barcelona sc'))) {
+          continue;
+        }
+        if (strictPreferred) {
+          if (preferred.some((n) => key === n || key.startsWith(`${n} `) || key.includes(n))) {
+            return team.crest;
+          }
+        } else if (needles.some((n) => key.includes(n.toLowerCase()))) {
+          return team.crest;
+        }
       }
-    }
+      return null;
+    };
+
+    found = tryMatch(preferred.length > 0) ?? tryMatch(false);
     map.set(club.key, found);
   }
 

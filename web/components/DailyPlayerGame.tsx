@@ -11,12 +11,14 @@ import { shouldPersistGameState } from '@/lib/daily-access';
 import { type DifficultyId } from '@/lib/difficulty-config';
 import { GAME_MODES, MAX_GUESSES, type GameModeId } from '@/lib/game-modes';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 import type {
   AgeCompareStatus,
   ComparisonResult,
   MatchStatus,
+  NumberCompareStatus,
   PlayerDisplay,
 } from '@/lib/players';
 
@@ -46,7 +48,18 @@ interface StoredGameState {
   revealed?: PlayerDisplay;
 }
 
-type BadgeCategory = 'nationality' | 'position' | 'club' | 'age';
+type TraitCategory = 'nationality' | 'league' | 'club' | 'position' | 'age' | 'shirt';
+
+const TRAIT_ORDER: TraitCategory[] = [
+  'nationality',
+  'league',
+  'club',
+  'position',
+  'age',
+  'shirt',
+];
+
+const CARD_STAGGER_MS = 180;
 
 function storageKey(
   mode: GameModeId,
@@ -119,85 +132,99 @@ function getPreferredSession(
   return 0;
 }
 
-function resetGameState(): Omit<StoredGameState, 'date' | 'mode' | 'difficulty' | 'session'> {
-  return {
-    guesses: [],
-    status: 'playing',
-    gaveUp: false,
-    revealed: undefined,
-  };
-}
-
-function categoryLabel(category: BadgeCategory): string {
+function categoryLabel(category: TraitCategory): string {
   switch (category) {
     case 'nationality':
       return 'Milliyet';
+    case 'league':
+      return 'Lig';
     case 'position':
       return 'Mevki';
     case 'club':
       return 'Kulüp';
     case 'age':
       return 'Yaş';
+    case 'shirt':
+      return 'Forma no';
   }
 }
 
-function badgeTitle(
-  category: BadgeCategory,
-  status: MatchStatus | AgeCompareStatus,
-  detail?: string
-): string {
-  const label = categoryLabel(category);
-  if (status === 'match') return `${label}: eşleşti`;
-  if (status === 'miss') return `${label}: eşleşmedi${detail ? ` (${detail})` : ''}`;
-  if (status === 'older') return `${label}: hedef daha yaşlı`;
-  if (status === 'younger') return `${label}: hedef daha genç`;
-  return `${label}: bilinmiyor`;
-}
-
-function categoryShortLabel(category: BadgeCategory): string {
+function categoryShortLabel(category: TraitCategory): string {
   switch (category) {
     case 'nationality':
       return 'MİL';
+    case 'league':
+      return 'LİG';
     case 'position':
       return 'MEVKİ';
     case 'club':
       return 'KULÜP';
     case 'age':
       return 'YAŞ';
+    case 'shirt':
+      return 'NO';
   }
 }
 
-function abbreviateNationality(nationality: string): string {
-  if (nationality === 'Bilinmiyor') return '?';
-  const known: Record<string, string> = {
-    Argentina: 'ARG',
-    Brazil: 'BRA',
-    France: 'FRA',
-    Germany: 'GER',
-    Spain: 'ESP',
-    Italy: 'ITA',
-    England: 'ENG',
-    Portugal: 'POR',
-    Netherlands: 'NED',
-    Belgium: 'BEL',
-    Croatia: 'CRO',
-    Nigeria: 'NGA',
-    Turkey: 'TUR',
-    'United States': 'USA',
-    Uruguay: 'URU',
-    Poland: 'POL',
-    Morocco: 'MAR',
-    Senegal: 'SEN',
-    Colombia: 'COL',
-    Mexico: 'MEX',
-    Japan: 'JPN',
-    'South Korea': 'KOR',
-    Algeria: 'ALG',
-  };
-  return known[nationality] ?? nationality.slice(0, 3).toUpperCase();
+function traitStatus(
+  category: TraitCategory,
+  comparison: ComparisonResult
+): MatchStatus | AgeCompareStatus | NumberCompareStatus {
+  switch (category) {
+    case 'nationality':
+      return comparison.nationality;
+    case 'league':
+      return comparison.league;
+    case 'club':
+      return comparison.club;
+    case 'position':
+      return comparison.position;
+    case 'age':
+      return comparison.age;
+    case 'shirt':
+      return comparison.shirtNumber;
+  }
 }
 
-function abbreviatePosition(position: string): string {
+function badgeTitle(
+  category: TraitCategory,
+  status: MatchStatus | AgeCompareStatus | NumberCompareStatus,
+  detail?: string
+): string {
+  const label = categoryLabel(category);
+  if (status === 'match') return `${label}: eşleşti`;
+  if (status === 'miss') return `${label}: eşleşmedi${detail ? ` (${detail})` : ''}`;
+  if (status === 'older') {
+    return category === 'shirt'
+      ? `${label}: hedef numara daha büyük`
+      : `${label}: hedef daha yaşlı`;
+  }
+  if (status === 'younger') {
+    return category === 'shirt'
+      ? `${label}: hedef numara daha küçük`
+      : `${label}: hedef daha genç`;
+  }
+  return `${label}: bilinmiyor`;
+}
+
+function abbreviateClub(club: string): string {
+  if (club === 'Bilinmiyor') return '?';
+  const cleaned = club
+    .replace(/\b(FC|CF|CFC|SK|AC|AS|SC|AFC|S\.K\.)\b/gi, '')
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return words
+      .slice(0, 3)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 4);
+  }
+  return cleaned.slice(0, 4).toUpperCase();
+}
+
+function displayPosition(position: string): string {
   if (position === 'Bilinmiyor') return '?';
   const map: Record<string, string> = {
     Goalkeeper: 'KL',
@@ -228,114 +255,200 @@ function abbreviatePosition(position: string): string {
   return position.slice(0, 3).toUpperCase();
 }
 
-function abbreviateClub(club: string): string {
-  if (club === 'Bilinmiyor') return '?';
-  const cleaned = club
-    .replace(/\b(FC|CF|CFC|SK|AC|AS|SC|AFC|S\.K\.)\b/gi, '')
-    .trim();
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) {
-    return words
-      .slice(0, 3)
-      .map((w) => w[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 4);
-  }
-  return cleaned.slice(0, 4).toUpperCase();
-}
-
-function badgeValue(
-  category: BadgeCategory,
-  guess: PlayerDisplay,
+function cardSurface(
+  category: TraitCategory,
+  status: MatchStatus | AgeCompareStatus | NumberCompareStatus,
   isWinningRow: boolean
-): string {
-  if (isWinningRow) return '✓';
-
-  switch (category) {
-    case 'nationality':
-      return abbreviateNationality(guess.nationality);
-    case 'position':
-      return abbreviatePosition(guess.position);
-    case 'club':
-      return abbreviateClub(guess.club);
-    case 'age':
-      return guess.age !== null ? String(guess.age) : '?';
-  }
-}
-
-function badgeStyles(
-  category: BadgeCategory,
-  status: MatchStatus | AgeCompareStatus,
-  isWinningRow: boolean
-): { bg: string; text: string; showAgeArrow: AgeCompareStatus | null } {
+): { circle: string; label: string; showArrow: 'older' | 'younger' | null } {
   if (isWinningRow) {
-    return { bg: 'bg-brand-border', text: 'text-brand-darker', showAgeArrow: null };
+    return {
+      circle: 'bg-brand-border text-brand-darker ring-2 ring-brand-border/60',
+      label: 'text-muted-light',
+      showArrow: null,
+    };
   }
 
-  if (category === 'age') {
+  const isDirectional = category === 'age' || category === 'shirt';
+
+  if (isDirectional) {
     if (status === 'match') {
-      return { bg: 'bg-brand-light', text: 'text-brand-dark', showAgeArrow: null };
+      return {
+        circle: 'bg-brand-light text-brand-dark ring-2 ring-brand-border/50',
+        label: 'text-muted-light',
+        showArrow: null,
+      };
     }
     if (status === 'older' || status === 'younger') {
-      return { bg: 'bg-hint-light', text: 'text-hint-dark', showAgeArrow: status };
+      return {
+        circle: 'bg-hint-light text-hint-dark ring-2 ring-hint-light',
+        label: 'text-muted-light',
+        showArrow: status,
+      };
     }
-    return { bg: 'bg-sidebar', text: 'text-muted-light', showAgeArrow: null };
+    return {
+      circle: 'bg-sidebar text-muted-light ring-1 ring-line',
+      label: 'text-muted-light',
+      showArrow: null,
+    };
   }
 
   if (status === 'match') {
-    return { bg: 'bg-brand-light', text: 'text-brand-dark', showAgeArrow: null };
+    return {
+      circle: 'bg-brand-light text-brand-dark ring-2 ring-brand-border/50',
+      label: 'text-muted-light',
+      showArrow: null,
+    };
   }
 
-  return { bg: 'bg-miss-light', text: 'text-miss-dark', showAgeArrow: null };
+  return {
+    circle: 'bg-miss-light text-miss-dark ring-2 ring-miss-light',
+    label: 'text-muted-light',
+    showArrow: null,
+  };
 }
 
-function ComparisonBadge({
-  category,
-  status,
-  isWinningRow,
-  guess,
+function DirectionalValue({
+  value,
+  showArrow,
+  size = 'sm',
 }: {
-  category: BadgeCategory;
-  status: MatchStatus | AgeCompareStatus;
-  isWinningRow: boolean;
-  guess: PlayerDisplay;
+  value: string;
+  showArrow: 'older' | 'younger' | null;
+  size?: 'sm' | 'md';
 }) {
-  const { bg, text, showAgeArrow } = badgeStyles(category, status, isWinningRow);
-  const value = badgeValue(category, guess, isWinningRow);
+  const textClass =
+    size === 'md'
+      ? 'text-[12px] font-bold leading-none sm:text-[13px]'
+      : 'text-[11px] font-bold leading-none sm:text-xs';
+
+  return (
+    <div className="flex items-center justify-center gap-0.5">
+      <span className={textClass}>{value}</span>
+      {showArrow === 'older' && (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
+      )}
+      {showArrow === 'younger' && (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
+      )}
+    </div>
+  );
+}
+
+function AssetCircleImage({
+  src,
+  alt,
+  fallback,
+  className,
+}: {
+  src: string | null;
+  alt: string;
+  fallback: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <span className="text-[10px] font-bold leading-none sm:text-[11px]">{fallback}</span>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function TraitCard({
+  category,
+  comparison,
+  guess,
+  isWinningRow,
+  animate,
+  delayMs,
+}: {
+  category: TraitCategory;
+  comparison: ComparisonResult;
+  guess: PlayerDisplay;
+  isWinningRow: boolean;
+  animate: boolean;
+  delayMs: number;
+}) {
+  const status = traitStatus(category, comparison);
+  const { circle, label, showArrow } = cardSurface(category, status, isWinningRow);
 
   const detail =
     category === 'nationality'
       ? guess.nationality
-      : category === 'position'
-        ? guess.position
-        : category === 'club'
-          ? guess.club
-          : guess.age !== null
-            ? String(guess.age)
-            : undefined;
+      : category === 'league'
+        ? guess.league
+        : category === 'position'
+          ? guess.position
+          : category === 'club'
+            ? guess.club
+            : category === 'age'
+              ? guess.age !== null
+                ? String(guess.age)
+                : undefined
+              : guess.shirtNumber !== null
+                ? String(guess.shirtNumber)
+                : undefined;
 
   return (
-    <div className="flex w-[72px] flex-col items-center gap-1">
+    <div
+      className={`flex min-w-0 flex-1 flex-col items-center gap-1.5 ${animate ? 'dp-card-drop' : ''}`}
+      style={animate ? { animationDelay: `${delayMs}ms` } : undefined}
+    >
       <div
         title={badgeTitle(category, status, detail)}
-        className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-full ${bg} ${text}`}
+        className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-full sm:h-14 sm:w-14 ${circle}`}
       >
         {isWinningRow ? (
           <Check className="h-5 w-5" strokeWidth={2.5} />
+        ) : category === 'nationality' ? (
+          <AssetCircleImage
+            src={guess.nationalityFlag}
+            alt={guess.nationality}
+            fallback={guess.nationality.slice(0, 3).toUpperCase()}
+            className="h-7 w-7 object-contain sm:h-8 sm:w-8"
+          />
+        ) : category === 'league' ? (
+          <AssetCircleImage
+            src={guess.leagueEmblem}
+            alt={guess.league}
+            fallback={guess.leagueCode}
+            className="h-7 w-7 object-contain sm:h-8 sm:w-8"
+          />
+        ) : category === 'club' ? (
+          <AssetCircleImage
+            src={guess.clubCrest}
+            alt={guess.club}
+            fallback={abbreviateClub(guess.club)}
+            className="h-8 w-8 object-contain sm:h-9 sm:w-9"
+          />
+        ) : category === 'position' ? (
+          <span className="text-[11px] font-bold leading-none sm:text-xs">
+            {displayPosition(guess.position)}
+          </span>
+        ) : category === 'age' ? (
+          <DirectionalValue
+            value={guess.age !== null ? String(guess.age) : '?'}
+            showArrow={showArrow}
+            size="md"
+          />
         ) : (
-          <>
-            <span className="text-[11px] font-bold leading-none">{value}</span>
-            {category === 'age' && showAgeArrow === 'older' && (
-              <ArrowUp className="mt-0.5 h-3 w-3" strokeWidth={2.5} />
-            )}
-            {category === 'age' && showAgeArrow === 'younger' && (
-              <ArrowDown className="mt-0.5 h-3 w-3" strokeWidth={2.5} />
-            )}
-          </>
+          <DirectionalValue
+            value={guess.shirtNumber !== null ? `#${guess.shirtNumber}` : '?'}
+            showArrow={showArrow}
+          />
         )}
       </div>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+      <span className={`text-[9px] font-bold uppercase tracking-wider sm:text-[10px] ${label}`}>
         {categoryShortLabel(category)}
       </span>
     </div>
@@ -359,43 +472,38 @@ function PitchDecoration() {
   );
 }
 
-function GuessRow({ item, isWinningRow }: { item: StoredGuess; isWinningRow: boolean }) {
+function GuessRow({
+  item,
+  isWinningRow,
+  animate,
+}: {
+  item: StoredGuess;
+  isWinningRow: boolean;
+  animate: boolean;
+}) {
   const { guess, comparison } = item;
 
   return (
     <div
-      className={`rounded-card px-3 py-3 ${
-        isWinningRow ? 'border-[1.5px] border-brand-border bg-brand-light' : 'border border-line'
+      className={`dp-guess-row rounded-card px-3 py-4 sm:px-4 ${
+        isWinningRow ? 'border-[1.5px] border-brand-border bg-brand-light' : ''
       }`}
     >
-      <p className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-ink">
+      <p className="mb-4 text-center text-[13px] font-bold uppercase tracking-[0.08em] text-ink sm:text-[14px]">
         {guess.name}
       </p>
-      <div className="flex justify-center gap-2 sm:gap-3">
-        <ComparisonBadge
-          category="nationality"
-          status={comparison.nationality}
-          isWinningRow={isWinningRow}
-          guess={guess}
-        />
-        <ComparisonBadge
-          category="club"
-          status={comparison.club}
-          isWinningRow={isWinningRow}
-          guess={guess}
-        />
-        <ComparisonBadge
-          category="position"
-          status={comparison.position}
-          isWinningRow={isWinningRow}
-          guess={guess}
-        />
-        <ComparisonBadge
-          category="age"
-          status={comparison.age}
-          isWinningRow={isWinningRow}
-          guess={guess}
-        />
+      <div className="flex justify-center gap-1 sm:gap-2">
+        {TRAIT_ORDER.map((category, index) => (
+          <TraitCard
+            key={category}
+            category={category}
+            comparison={comparison}
+            guess={guess}
+            isWinningRow={isWinningRow}
+            animate={animate}
+            delayMs={index * CARD_STAGGER_MS}
+          />
+        ))}
       </div>
     </div>
   );
@@ -419,6 +527,7 @@ export function DailyPlayerGame() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [confirmGiveUp, setConfirmGiveUp] = useState(false);
   const [gaveUp, setGaveUp] = useState(false);
+  const [animateLatestRow, setAnimateLatestRow] = useState(false);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -449,6 +558,7 @@ export function DailyPlayerGame() {
       setSuggestions([]);
       setError(null);
       setConfirmGiveUp(false);
+      setAnimateLatestRow(false);
     },
     [date]
   );
@@ -537,6 +647,7 @@ export function DailyPlayerGame() {
 
       setGuesses(nextGuesses);
       setStatus(nextStatus);
+      setAnimateLatestRow(true);
       if (nextStatus === 'won') recordOfficialResult('won');
       if (nextStatus === 'lost') recordOfficialResult('lost');
       setRevealed(data.revealed ?? null);
@@ -615,35 +726,14 @@ export function DailyPlayerGame() {
     }
   }
 
-  function handlePlayAgain() {
-    const nextSession = session + 1;
-    setSession(nextSession);
-    setGuesses([]);
-    setStatus('playing');
-    setRevealed(null);
-    setGaveUp(false);
-    setConfirmGiveUp(false);
-    setQuery('');
-    setSelected(null);
-    setSuggestions([]);
-    setError(null);
-    setDropdownOpen(false);
-
-    saveState({
-      date: date,
-      mode,
-      difficulty,
-      session: nextSession,
-      ...resetGameState(),
-    });
-  }
-
   return (
     <div className="relative mx-auto max-w-xl">
       <PitchDecoration />
 
       <header className="relative mb-8">
-        <h1 className="text-[20px] font-medium text-ink">Günlük oyuncu tahmini</h1>
+        <GameTitle gameId="daily-player" className="text-[20px] font-medium text-ink" size="sm">
+          Günlük oyuncu tahmini
+        </GameTitle>
         <p className="mt-1 text-[13px] text-muted">
           Gizli futbolcuyu {MAX_GUESSES} denemede bul.
         </p>
@@ -726,6 +816,7 @@ export function DailyPlayerGame() {
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       {player.clubCrest ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={player.clubCrest}
                           alt={player.club}
@@ -739,7 +830,7 @@ export function DailyPlayerGame() {
                       <span className="truncate font-semibold">{player.name}</span>
                     </div>
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar text-[12px] font-semibold text-ink">
-                      {abbreviatePosition(player.position)}
+                      {displayPosition(player.position)}
                     </div>
                   </button>
                 </li>
@@ -806,16 +897,10 @@ export function DailyPlayerGame() {
             Gizli oyuncu:{' '}
             <strong className="font-medium text-ink">{revealed.name}</strong>
             {' — '}
-            {revealed.nationality}, {revealed.position}, {revealed.club}
+            {revealed.nationality}, {revealed.league}, {revealed.position}, {revealed.club}
             {revealed.age !== null ? `, ${revealed.age} yaş` : ''}
+            {revealed.shirtNumber !== null ? `, #${revealed.shirtNumber}` : ''}
           </p>
-          <button
-            type="button"
-            onClick={handlePlayAgain}
-            className="mt-4 rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white transition hover:bg-brand-dark"
-          >
-            Tekrar oyna
-          </button>
         </div>
       )}
 
@@ -826,6 +911,7 @@ export function DailyPlayerGame() {
               key={`${item.guess.id}-${index}`}
               item={item}
               isWinningRow={status === 'won' && index === guesses.length - 1}
+              animate={animateLatestRow && index === guesses.length - 1}
             />
           ))}
         </div>

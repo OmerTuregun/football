@@ -1,8 +1,9 @@
 'use client';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect } from 'react';
 
-import { getTodayDateString } from '@/lib/daily-hash';
+import { clampPlayablePuzzleDate, getTodayDateString } from '@/lib/daily-hash';
 import { isArchiveDate, isToday } from '@/lib/daily-access';
 
 interface DailyArchivePickerProps {
@@ -30,12 +31,18 @@ export function DailyArchivePicker({ date, onDateChange, disabled }: DailyArchiv
     dates.push(d.toISOString().slice(0, 10));
   }
 
-  const idx = Math.max(0, dates.indexOf(date));
-  const canPrev = idx > 0;
-  const canNext = idx < dates.length - 1;
+  const playableDate = clampPlayablePuzzleDate(date);
 
-  const prevDate = canPrev ? dates[idx - 1] : date;
-  const nextDate = canNext ? dates[idx + 1] : date;
+  useEffect(() => {
+    if (playableDate !== date) onDateChange(playableDate);
+  }, [date, playableDate, onDateChange]);
+
+  const idx = Math.max(0, dates.indexOf(playableDate));
+  const canPrev = idx > 0;
+  const canNext = idx < dates.length - 1 && dates[idx + 1]! <= today;
+
+  const prevDate = canPrev ? dates[idx - 1]! : playableDate;
+  const nextDate = canNext ? dates[idx + 1]! : playableDate;
 
   return (
     <div className="space-y-2">
@@ -58,7 +65,7 @@ export function DailyArchivePicker({ date, onDateChange, disabled }: DailyArchiv
             {idx + 1} / {dates.length}
           </p>
           <p className="truncate text-[13px] font-medium text-ink">
-            {isToday(date) ? 'Bugün' : formatCompactDate(date)}
+            {isToday(playableDate) ? 'Bugün' : formatCompactDate(playableDate)}
           </p>
         </div>
 
@@ -73,8 +80,8 @@ export function DailyArchivePicker({ date, onDateChange, disabled }: DailyArchiv
         </button>
       </div>
 
-      {isToday(date) && <p className="text-[10px] text-muted">Bugün oyun türü başına 1 resmi hak.</p>}
-      {isArchiveDate(date) && <p className="text-[10px] text-muted">Seçilen günün bulmacası, temiz tahta.</p>}
+      {isToday(playableDate) && <p className="text-[10px] text-muted">Bugün oyun türü başına 1 resmi hak.</p>}
+      {isArchiveDate(playableDate) && <p className="text-[10px] text-muted">Seçilen günün bulmacası, temiz tahta.</p>}
     </div>
   );
 }

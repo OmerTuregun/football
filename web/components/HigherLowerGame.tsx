@@ -7,6 +7,7 @@ import { type DifficultyId } from '@/lib/difficulty-config';
 import { GAME_MODES, type GameModeId } from '@/lib/game-modes';
 import { isGameStartBlocked } from '@/lib/daily-access';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 
@@ -288,7 +289,9 @@ export function HigherLowerGame() {
   return (
     <div className="relative mx-auto max-w-2xl">
       <header className="relative mb-8">
-        <h1 className="text-[20px] font-medium text-ink">Kim Daha Çok</h1>
+        <GameTitle gameId="higher-lower" className="text-[20px] font-medium text-ink" size="sm">
+          Kim Daha Çok
+        </GameTitle>
         <p className="mt-1 text-[13px] text-muted">
           Sağdaki oyuncu için daha fazla mı, daha az mı? Serini bozma.
         </p>
@@ -427,13 +430,6 @@ export function HigherLowerGame() {
               </>
             )}
           </p>
-          <button
-            type="button"
-            onClick={() => void startRound()}
-            className="mt-4 rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white transition hover:bg-brand-dark"
-          >
-            Tekrar oyna
-          </button>
         </div>
       )}
     </div>

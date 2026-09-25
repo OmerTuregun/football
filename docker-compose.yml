@@ -78,7 +78,29 @@ services:
       - |
         EXTRA=""
         if [ -n "$$SEASON" ]; then EXTRA="$$EXTRA --season=$$SEASON"; fi
+        if [ -n "$$FORCE_PLAYERS" ]; then EXTRA="$$EXTRA --force-players=$$FORCE_PLAYERS"; fi
         npm run statpal-import -- --competition=$${COMPETITION}$$EXTRA
+
+  statpal-repair-stats:
+    <<: *pipeline
+    profiles: [tools]
+    environment:
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      STATPAL_ACCESS_KEY: ${STATPAL_ACCESS_KEY:-}
+      STATPAL_CONCURRENCY: ${STATPAL_CONCURRENCY:-6}
+      COMPETITION: ${COMPETITION:-}
+      SEASON: ${SEASON:-}
+      IMPORT: ${IMPORT:-true}
+    command:
+      - sh
+      - -c
+      - |
+        EXTRA=""
+        if [ -n "$$COMPETITION" ]; then EXTRA="$$EXTRA --competition=$$COMPETITION"; fi
+        if [ -n "$$SEASON" ]; then EXTRA="$$EXTRA --season=$$SEASON"; fi
+        if [ -n "$$IMPORT" ]; then EXTRA="$$EXTRA --import=$$IMPORT"; fi
+        npm run statpal-repair-stats -- $$EXTRA
 
   statpal-backfill-players:
     <<: *pipeline
@@ -115,6 +137,18 @@ services:
       - ./data-pipeline/data:/data
     working_dir: /app
     command: ["npm", "run", "pregenerate-puzzles"]
+
+  regenerate-puzzles:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.tools
+    profiles: [tools]
+    environment:
+      DB_PATH: /data/football.db
+    volumes:
+      - ./data-pipeline/data:/data
+    working_dir: /app
+    command: ["npm", "run", "regenerate-puzzles"]
 
   backfill-match-details:
     <<: *pipeline

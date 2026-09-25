@@ -1,5 +1,7 @@
 import { getTodayDateString } from './daily-hash';
 
+export { isFuturePuzzleDate, clampPlayablePuzzleDate } from './daily-hash';
+
 export type DailyGameId =
   | 'daily-player'
   | 'higher-lower'

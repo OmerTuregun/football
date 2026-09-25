@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getTodayDateString } from '@/lib/daily-hash';
-import { isValidDifficulty } from '@/lib/difficulty-config';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
+import { ONLUK_DIFFICULTY } from '@/lib/onluk-shared';
 import { createOnlukPuzzle, toPublicPuzzle } from '@/lib/onluk';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const difficulty = request.nextUrl.searchParams.get('difficulty') ?? 'easy';
-  const date = request.nextUrl.searchParams.get('date') ?? getTodayDateString();
+  const dateOrErr = playableDateOrResponse(request.nextUrl.searchParams.get('date'));
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+  const date = dateOrErr;
   const sessionRaw = request.nextUrl.searchParams.get('session') ?? '0';
   const session = Number(sessionRaw);
 
-  if (!isValidDifficulty(difficulty)) {
-    return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 });
-  }
   if (!Number.isInteger(session) || session < 0) {
     return NextResponse.json({ error: 'session must be a non-negative integer' }, { status: 400 });
   }
 
   try {
-    const puzzle = createOnlukPuzzle(difficulty, date, session);
-    return NextResponse.json(toPublicPuzzle(puzzle, date, session, difficulty));
+    const puzzle = createOnlukPuzzle(ONLUK_DIFFICULTY, date, session);
+    return NextResponse.json(toPublicPuzzle(puzzle, date, session));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Puzzle failed';
     if (message.includes('No eligible')) {

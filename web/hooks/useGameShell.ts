@@ -9,13 +9,17 @@ import {
   shouldPersistGameState,
   type DailyGameId,
 } from '@/lib/daily-access';
-import { getTodayDateString } from '@/lib/daily-hash';
+import { clampPlayablePuzzleDate, getTodayDateString } from '@/lib/daily-hash';
 import { getDefaultTimerSeconds, getTimerEnabled } from '@/lib/game-preferences';
 
 export function useGameShell(gameId: DailyGameId) {
-  const [date, setDate] = useState(getTodayDateString);
+  const [date, setDateState] = useState(getTodayDateString);
   const [timerEnabled, setTimerEnabled] = useState(() => getTimerEnabled());
   const timerLimitSec = getDefaultTimerSeconds(gameId);
+
+  const setDate = useCallback((next: string) => {
+    setDateState(clampPlayablePuzzleDate(next));
+  }, []);
 
   const canStart = !isGameStartBlocked(gameId, date);
   const persistState = shouldPersistGameState(date);

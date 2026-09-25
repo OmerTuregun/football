@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type DifficultyId } from '@/lib/difficulty-config';
-import { isToday, shouldPersistGameState } from '@/lib/daily-access';
+import { shouldPersistGameState } from '@/lib/daily-access';
 import { GRID_SIZE } from '@/lib/club-grid-shared';
 import type { PlayerDisplay } from '@/lib/players';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { isGameStartBlocked } from '@/lib/daily-access';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
@@ -60,6 +61,19 @@ function emptyCells(): Record<string, CellState> {
   for (let r = 0; r < GRID_SIZE; r++) {
     for (let c = 0; c < GRID_SIZE; c++) {
       out[cellKey(r, c)] = { status: 'open' };
+    }
+  }
+  return out;
+}
+
+/** Wrong guesses no longer lock cells — reopen any legacy "wrong" saves. */
+function sanitizeCells(cells: Record<string, CellState>): Record<string, CellState> {
+  const out: Record<string, CellState> = {};
+  for (const [key, cell] of Object.entries(cells)) {
+    if (cell.status === 'wrong') {
+      out[key] = { status: 'open' };
+    } else {
+      out[key] = cell;
     }
   }
   return out;
@@ -282,7 +296,9 @@ export function ClubGridGame() {
   const usedIds = useMemo(() => {
     const set = new Set<number>();
     for (const cell of Object.values(cells)) {
-      if (cell.player) set.add(cell.player.id);
+      if ((cell.status === 'correct' || cell.status === 'revealed') && cell.player) {
+        set.add(cell.player.id);
+      }
     }
     return set;
   }, [cells]);
@@ -317,11 +333,27 @@ export function ClubGridGame() {
 
       try {
         if (saved?.rows?.length === GRID_SIZE && saved.cols?.length === GRID_SIZE) {
+          const cleaned = sanitizeCells(saved.cells);
+          const solved = Object.values(cleaned).filter((c) => c.status === 'correct').length;
+          const nextStatus: StoredGameState['status'] =
+            saved.status === 'won' || saved.status === 'lost'
+              ? saved.status
+              : solved === GRID_SIZE * GRID_SIZE
+                ? 'won'
+                : 'playing';
           setRows(saved.rows);
           setCols(saved.cols);
-          setCells(saved.cells);
-          setStatus(saved.status);
+          setCells(cleaned);
+          setStatus(nextStatus);
           setGaveUp(saved.gaveUp ?? false);
+          const hadWrong = Object.values(saved.cells).some((c) => c.status === 'wrong');
+          if (hadWrong || nextStatus !== saved.status) {
+            saveState({
+              ...saved,
+              cells: cleaned,
+              status: nextStatus,
+            });
+          }
         } else {
           const puzzle = await fetchPuzzle(nextDifficulty, preferred);
           const nextCells = emptyCells();
@@ -395,7 +427,12 @@ export function ClubGridGame() {
       }
 
       const nextCells = { ...cells };
-      if (data.correct && Array.isArray(data.extraFills) && data.extraFills.length > 0) {
+      if (!data.correct) {
+        setModalError('Bu oyuncu bu hücreye uymuyor. Tekrar dene.');
+        return;
+      }
+
+      if (Array.isArray(data.extraFills) && data.extraFills.length > 0) {
         for (const fill of data.extraFills as Array<{ row: number; col: number; cellKey: string }>) {
           nextCells[fill.cellKey] = {
             status: 'correct' as const,
@@ -404,24 +441,18 @@ export function ClubGridGame() {
         }
       } else {
         nextCells[key] = {
-          status: data.correct ? ('correct' as const) : ('wrong' as const),
+          status: 'correct' as const,
           player: data.guess as PlayerDisplay,
         };
       }
       const nextSolved = Object.values(nextCells).filter((c) => c.status === 'correct').length;
-      const openLeft = Object.values(nextCells).filter((c) => c.status === 'open').length;
       const nextStatus: StoredGameState['status'] =
-        nextSolved === GRID_SIZE * GRID_SIZE
-          ? 'won'
-          : openLeft === 0
-            ? 'lost'
-            : 'playing';
+        nextSolved === GRID_SIZE * GRID_SIZE ? 'won' : 'playing';
 
       setCells(nextCells);
       setStatus(nextStatus);
       setActiveCell(null);
       if (nextStatus === 'won') recordOfficialResult('won');
-      if (nextStatus === 'lost') recordOfficialResult('lost');
       saveState({
         date: date,
         difficulty,
@@ -491,38 +522,6 @@ export function ClubGridGame() {
     }
   }
 
-  async function handlePlayAgain() {
-    setSession(0);
-    setLoadingPuzzle(true);
-    setActiveCell(null);
-    setConfirmGiveUp(false);
-    setError(null);
-    try {
-      const puzzle = await fetchPuzzle(difficulty, 0);
-      const nextCells = emptyCells();
-      setRows(puzzle.rows);
-      setCols(puzzle.cols);
-      setCells(nextCells);
-      setStatus('playing');
-      setGaveUp(false);
-      if (shouldPersistGameState(date)) {
-        saveState({
-          date,
-          difficulty,
-          session: 0,
-          rows: puzzle.rows,
-          cols: puzzle.cols,
-          cells: nextCells,
-          status: 'playing',
-        });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulmaca yüklenemedi');
-    } finally {
-      setLoadingPuzzle(false);
-    }
-  }
-
   const activeRowLabel =
     activeCell && rows[activeCell.row] ? rows[activeCell.row].label : '';
   const activeColLabel =
@@ -533,7 +532,12 @@ export function ClubGridGame() {
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
         <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[280px]">
           <header className="mb-5">
-            <h1 className="text-[28px] font-semibold tracking-tight text-ink">Kulüp Grid</h1>
+            <GameTitle
+              gameId="club-grid"
+              className="text-[28px] font-semibold tracking-tight text-ink"
+            >
+              Kulüp Grid
+            </GameTitle>
             <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
               Her hücre hem satır hem sütun kulübünde oynamış bir oyuncu olsun. Aynı oyuncuyu iki
               kez kullanamazsın.
@@ -623,13 +627,6 @@ export function ClubGridGame() {
                     ? 'Pes ettiniz — örnek cevaplar açıldı.'
                     : 'Grid bitti.'}
               </p>
-              <button
-                type="button"
-                onClick={() => void handlePlayAgain()}
-                className="mt-3 rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white hover:bg-brand-dark"
-              >
-                {isToday(date) ? 'Kapat' : 'Yeniden dene'}
-              </button>
             </div>
           )}
         </aside>
@@ -669,16 +666,15 @@ export function ClubGridGame() {
                           className={`flex min-h-[100px] flex-col items-center justify-center rounded-card border px-2 py-3 text-center transition sm:min-h-[120px] ${
                             cell.status === 'correct'
                               ? 'border-brand-border bg-brand-light'
-                              : cell.status === 'wrong'
-                                ? 'border-miss-light bg-miss-light/50'
-                                : cell.status === 'revealed'
-                                  ? 'border-line bg-sidebar'
-                                  : clickable
-                                    ? 'border-line bg-page hover:border-brand hover:bg-brand-light/40'
-                                    : 'border-line bg-page'
+                              : cell.status === 'revealed'
+                                ? 'border-line bg-sidebar'
+                                : clickable
+                                  ? 'border-line bg-page hover:border-brand hover:bg-brand-light/40'
+                                  : 'border-line bg-page'
                           }`}
                         >
-                          {cell.player ? (
+                          {cell.player &&
+                          (cell.status === 'correct' || cell.status === 'revealed') ? (
                             <>
                               <p className="text-[13px] font-semibold leading-tight text-ink sm:text-[14px]">
                                 {cell.player.name}

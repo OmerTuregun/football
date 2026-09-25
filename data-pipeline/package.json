@@ -23,6 +23,7 @@
     "statpal-import": "ts-node src/scripts/statpal-import.ts",
     "statpal-backfill-players": "ts-node src/scripts/statpal-backfill-players.ts",
     "statpal-backfill-transfers": "ts-node src/scripts/statpal-backfill-transfers.ts",
+    "statpal-repair-stats": "ts-node src/scripts/statpal-repair-stats.ts",
     "docker:explore-statpal": "docker compose --profile tools run --rm explore-statpal",
     "docker:statpal-import": "docker compose --profile tools run --rm statpal-import",
     "docker:statpal-backfill-players": "docker compose --profile tools run --rm --entrypoint \"\" statpal-import npm run statpal-backfill-players --",

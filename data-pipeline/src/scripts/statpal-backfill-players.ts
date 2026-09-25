@@ -4,37 +4,10 @@
  * Or without --ids: find CL 2024-2025 squad IDs not in statpal_fetched_players.
  */
 import { closeDb, getDb, runMigrations } from '../db/client';
-import { getLeagueByCode } from '../config/statpalMapping';
 import { getPlayer, getUserRequestCount } from '../fetch/statpalClient';
-import {
-  StatPalRepository,
-  parseBirthdate,
-  parseFloatOrNull,
-  parseIntOrNull,
-} from '../import/statpalRepository';
+import { ingestStatPalPlayer } from '../import/statpalPlayerIngest';
+import { StatPalRepository } from '../import/statpalRepository';
 import { parseArgs } from '../utils';
-
-function mapStatRow(row: Record<string, unknown>): Record<string, number | null> {
-  return {
-    appearances: parseIntOrNull(row.appearances ?? row.appearences),
-    goals: parseIntOrNull(row.goals),
-    assists: parseIntOrNull(row.assists),
-    minutes_played: parseIntOrNull(row.minutes_played),
-    yellow_cards: parseIntOrNull(row.yellowcards ?? row.yellow_cards),
-    red_cards: parseIntOrNull(row.redcards ?? row.red_cards),
-    key_passes: parseIntOrNull(row.key_passes),
-    pass_attempts: parseIntOrNull(row.pass_attempts),
-    pass_success: parseIntOrNull(row.pass_success),
-    tackles: parseIntOrNull(row.tackles),
-    duels_total: parseIntOrNull(row.duels_total),
-    duels_won: parseIntOrNull(row.duels_won),
-    dribble_attempts: parseIntOrNull(row.dribble_attempts),
-    dribble_success: parseIntOrNull(row.dribble_success),
-    rating: parseFloatOrNull(row.rating),
-    starting_lineups: parseIntOrNull(row.starting_lineups),
-    substitute_in: parseIntOrNull(row.substitute_in),
-  };
-}
 
 function findMissingFromState(db: ReturnType<typeof getDb>): string[] {
   const teams = db
@@ -76,12 +49,6 @@ async function main(): Promise<void> {
   const usage = await getUserRequestCount();
   console.log(`[quota] ${usage.current_date}: ${usage.request_count}`);
 
-  const league = getLeagueByCode(args.competition ?? 'CL');
-  if (!league) throw new Error('Unknown competition');
-  const season = args.season ?? '2024-2025';
-  const competitionId = repo.ensureCompetition(league.code, league.statpalName);
-  const seasonId = repo.ensureSeason(competitionId, season);
-
   let ok = 0;
   let fail = 0;
 
@@ -100,75 +67,18 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const playerId = repo.upsertPlayer(String(p.id ?? id), String(p.name ?? 'Unknown'), {
-        firstName: p.firstname ? String(p.firstname) : undefined,
-        lastName: p.lastname ? String(p.lastname) : undefined,
-        birthdate: parseBirthdate(p.birthdate ? String(p.birthdate) : undefined) ?? undefined,
-        nationality: p.nationality ? String(p.nationality) : undefined,
-        position: p.position ? String(p.position) : undefined,
-        marketValueEur: parseIntOrNull(p.market_value_eur),
-      });
-      repo.markPlayerFetched(id, playerId);
-
-      for (const block of [
-        p.club_league_statistics,
-        p.club_domestic_cup_statistics,
-        p.club_intl_cup_statistics,
-      ] as Array<{ club?: Array<Record<string, unknown>> } | undefined>) {
-        for (const row of block?.club ?? []) {
-          const teamStatpalId = row.team_id ? String(row.team_id) : null;
-          if (!teamStatpalId) continue;
-          const teamId = repo.upsertTeam(teamStatpalId, String(row.team_name ?? 'Unknown'));
-          const rowSeason = String(row.season ?? season);
-          if (rowSeason !== season && !rowSeason.includes(season.split('-')[0])) continue;
-          repo.upsertPlayerSeasonStats(
-            playerId,
-            teamId,
-            seasonId,
-            competitionId,
-            rowSeason,
-            String(row.league_id ?? league.leagueId),
-            mapStatRow(row)
-          );
-        }
-      }
-
-      for (const tr of (p.transfers as Array<Record<string, unknown>> | undefined) ?? []) {
-        repo.insertTransfer(playerId, {
-          date: tr.date ? String(tr.date) : undefined,
-          type: tr.type ? String(tr.type) : undefined,
-          price: tr.price ? String(tr.price) : undefined,
-          from: tr.from ? String(tr.from) : undefined,
-          fromId: tr.from_id ? String(tr.from_id) : undefined,
-          to: tr.to ? String(tr.to) : undefined,
-          toId: tr.to_id ? String(tr.to_id) : undefined,
-        });
-      }
-
-      const trophiesRaw = p.trophies;
-      const trophyList: Array<Record<string, unknown>> = [];
-      if (Array.isArray(trophiesRaw)) trophyList.push(...trophiesRaw);
-      else if (trophiesRaw && typeof trophiesRaw === 'object') {
-        for (const [key, val] of Object.entries(trophiesRaw as Record<string, unknown>)) {
-          if (val && typeof val === 'object') {
-            trophyList.push({ ...(val as Record<string, unknown>), league: key });
-          }
-        }
-      }
-      repo.replacePlayerTrophies(playerId, trophyList);
-
-      console.log(
-        `  [ok] ${id} → db#${playerId} name="${p.name}" pos=${p.position ?? '?'} nation=${p.nationality ?? '?'}`
-      );
+      const result = ingestStatPalPlayer(repo, id, p);
       ok += 1;
+      console.log(
+        `  [ok] ${p.name ?? id} stats=${result.statsRows} skippedOtherLeagues=${result.skippedRows}`
+      );
     } catch (err) {
-      console.warn(`  [fail] ${id}:`, err instanceof Error ? err.message : err);
       fail += 1;
+      console.warn(`  [fail] ${id}:`, err instanceof Error ? err.message : err);
     }
   }
 
-  const after = await getUserRequestCount();
-  console.log(`[backfill] done ok=${ok} fail=${fail} dailyUsed=${after.request_count}`);
+  console.log(`[backfill] done ok=${ok} fail=${fail}`);
   closeDb();
 }
 

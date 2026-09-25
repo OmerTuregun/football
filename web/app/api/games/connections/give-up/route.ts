@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { revealConnections } from '@/lib/connections';
-import { getTodayDateString } from '@/lib/daily-hash';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
 import { isValidDifficulty } from '@/lib/difficulty-config';
 
 export const dynamic = 'force-dynamic';
@@ -33,10 +33,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'solvedGroupIds must be string[]' }, { status: 400 });
   }
 
+  const dateOrErr = playableDateOrResponse(date);
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+
   try {
     const result = revealConnections(
       difficulty,
-      date ?? getTodayDateString(),
+      dateOrErr,
       session,
       solvedGroupIds
     );

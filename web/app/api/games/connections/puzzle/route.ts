@@ -4,14 +4,16 @@ import {
   createConnectionsPuzzle,
   toPublicConnectionsPuzzle,
 } from '@/lib/connections';
-import { getTodayDateString } from '@/lib/daily-hash';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
 import { isValidDifficulty } from '@/lib/difficulty-config';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const difficulty = request.nextUrl.searchParams.get('difficulty') ?? 'easy';
-  const date = request.nextUrl.searchParams.get('date') ?? getTodayDateString();
+  const dateOrErr = playableDateOrResponse(request.nextUrl.searchParams.get('date'));
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+  const date = dateOrErr;
   const sessionRaw = request.nextUrl.searchParams.get('session') ?? '0';
   const session = Number(sessionRaw);
 

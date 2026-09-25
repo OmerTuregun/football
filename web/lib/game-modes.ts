@@ -23,6 +23,9 @@ export const MAX_GUESSES = 8;
 /** National-team tournaments — not used for "kulüp" resolution. */
 export const INTERNATIONAL_COMPETITION_CODES = ['EC', 'WC'] as const;
 
+/** Continental / national-team comps — not shown as the player's domestic league. */
+export const NON_DOMESTIC_LEAGUE_CODES = ['CL', 'EL', 'ECL', 'EC', 'WC'] as const;
+
 export function getGameMode(modeId: string): GameMode {
   const mode = GAME_MODES.find((m) => m.id === modeId);
   if (!mode) {

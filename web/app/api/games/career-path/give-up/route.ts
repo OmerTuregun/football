@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { revealCareerPath } from '@/lib/career-path';
-import { getTodayDateString } from '@/lib/daily-hash';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
 import { isValidDifficulty } from '@/lib/difficulty-config';
 import { isValidGameMode } from '@/lib/game-modes';
 
@@ -34,11 +34,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'session must be a non-negative integer' }, { status: 400 });
   }
 
+  const dateOrErr = playableDateOrResponse(date);
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+
   try {
     const result = revealCareerPath({
       modeId: mode,
       difficulty,
-      date: date ?? getTodayDateString(),
+      date: dateOrErr,
       session,
     });
     return NextResponse.json(result);

@@ -5,7 +5,7 @@ import {
   CONNECTIONS_GROUP_SIZE,
   CONNECTIONS_MISTAKES,
 } from '@/lib/connections-shared';
-import { getTodayDateString } from '@/lib/daily-hash';
+import { playableDateOrResponse } from '@/lib/api-playable-date';
 import { isValidDifficulty } from '@/lib/difficulty-config';
 
 export const dynamic = 'force-dynamic';
@@ -61,10 +61,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid mistakesLeft' }, { status: 400 });
   }
 
+  const dateOrErr = playableDateOrResponse(date);
+  if (dateOrErr instanceof NextResponse) return dateOrErr;
+
   try {
     const result = guessConnections({
       difficulty,
-      date: date ?? getTodayDateString(),
+      date: dateOrErr,
       session,
       playerIds,
       solvedGroupIds,

@@ -13,7 +13,13 @@ export interface CanonicalClubDef {
 
 export const CANONICAL_CLUBS: CanonicalClubDef[] = [
   { key: 'real-madrid', label: 'Real Madrid', needles: ['real madrid'], tier: 'elite' },
-  { key: 'barcelona', label: 'Barcelona', needles: ['barcelona'], tier: 'elite' },
+  {
+    key: 'barcelona',
+    label: 'Barcelona',
+    needles: ['barcelona'],
+    crestNeedles: ['fc barcelona'],
+    tier: 'elite',
+  },
   {
     key: 'atletico',
     label: 'Atlético Madrid',
@@ -24,7 +30,13 @@ export const CANONICAL_CLUBS: CanonicalClubDef[] = [
   { key: 'bayern', label: 'Bayern München', needles: ['bayern'], tier: 'elite' },
   { key: 'dortmund', label: 'Borussia Dortmund', needles: ['dortmund'], tier: 'elite' },
   { key: 'man-city', label: 'Manchester City', needles: ['manchester city'], tier: 'elite' },
-  { key: 'man-utd', label: 'Manchester United', needles: ['manchester united'], tier: 'elite' },
+  {
+    key: 'man-utd',
+    label: 'Manchester United',
+    needles: ['manchester united', 'manchester utd', 'man utd'],
+    crestNeedles: ['manchester united fc', 'manchester united'],
+    tier: 'elite',
+  },
   { key: 'liverpool', label: 'Liverpool', needles: ['liverpool'], tier: 'elite' },
   { key: 'arsenal', label: 'Arsenal', needles: ['arsenal'], tier: 'elite' },
   { key: 'chelsea', label: 'Chelsea', needles: ['chelsea'], tier: 'elite' },
@@ -88,6 +100,10 @@ function isFalseFriend(key: string): boolean {
     key.includes('u21') ||
     key.includes('espanyol') ||
     key.includes('airport') ||
+    key.includes(' barcelona b') ||
+    key.endsWith(' barcelona b') ||
+    key === 'barcelona b' ||
+    key.includes('barcelona sc') ||
     key.endsWith(' ii') ||
     /\b(reserves|youth|women)\b/.test(key)
   );
@@ -106,6 +122,10 @@ export function canonicalClubKey(name: string): string | null {
     if (club.key === 'milan' && key.includes('inter')) return null;
     if (club.key === 'inter' && (key === 'milan' || key.includes('ac milan'))) return null;
     if (club.key === 'porto' && !key.includes('porto')) return null;
+    // Espanyol / Ecuador Barcelona SC must not map to FC Barcelona
+    if (club.key === 'barcelona' && (key.includes('espanyol') || key.includes('barcelona sc'))) {
+      return null;
+    }
     if (club.key === 'roma' && (key.includes('as roma') || key === 'roma' || key.endsWith(' roma'))) {
       // ok
     } else if (club.key === 'roma' && key.includes('roma') && key.includes('lazio')) {

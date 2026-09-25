@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { normalizeForSearch } from '../utils/normalizeSearch';
 import type { StatPalCompetitionCode, StatPalPhase } from '../config/statpalMapping';
-import { seasonStartYear } from '../config/statpalMapping';
+import { STATPAL_LEAGUE_EMBLEMS, seasonStartYear } from '../config/statpalMapping';
 
 export interface FetchStateRow {
   status: string;
@@ -62,19 +62,31 @@ export class StatPalRepository {
   }
 
   ensureCompetition(code: StatPalCompetitionCode, name: string): number {
+    const emblem = STATPAL_LEAGUE_EMBLEMS[code] ?? null;
     const existing = this.db
       .prepare('SELECT id FROM competitions WHERE code = ?')
       .get(code) as { id: number } | undefined;
-    if (existing) return existing.id;
+    if (existing) {
+      if (emblem) {
+        this.db
+          .prepare(
+            `UPDATE competitions
+             SET emblem = ?, updated_at = datetime('now')
+             WHERE code = ? AND (emblem IS NULL OR trim(emblem) = '')`
+          )
+          .run(emblem, code);
+      }
+      return existing.id;
+    }
 
     const maxId =
       (this.db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM competitions').get() as { m: number }).m + 1;
     this.db
       .prepare(
-        `INSERT INTO competitions (id, name, code, type, updated_at)
-         VALUES (?, ?, ?, 'LEAGUE', datetime('now'))`
+        `INSERT INTO competitions (id, name, code, type, emblem, updated_at)
+         VALUES (?, ?, ?, 'LEAGUE', ?, datetime('now'))`
       )
-      .run(maxId, name, code);
+      .run(maxId, name, code, emblem);
     return maxId;
   }
 

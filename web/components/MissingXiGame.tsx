@@ -9,6 +9,7 @@ import { MAX_SLOT_ATTEMPTS, type LinePos } from '@/lib/missing-xi-shared';
 import { kitForTeam, type KitColors } from '@/lib/team-kit';
 import { normalizeAnswerLetters, type TileStatus } from '@/lib/wordle';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 
@@ -907,39 +908,6 @@ export function MissingXiGame() {
     }
   }
 
-  async function handlePlayAgain() {
-    const nextSession = session + 1;
-    setSession(nextSession);
-    setLoadingPuzzle(true);
-    setActiveSlot(null);
-    setConfirmGiveUp(false);
-    setError(null);
-    setFlipAttemptIndex(null);
-    try {
-      const puzzle = await fetchPuzzle(mode, difficulty, nextSession);
-      const nextSlots = emptySlotStates();
-      setMeta(puzzle.meta);
-      setSlots(puzzle.slots);
-      setSlotStates(nextSlots);
-      setStatus('playing');
-      setGaveUp(false);
-      saveState({
-        date: date,
-        mode,
-        difficulty,
-        session: nextSession,
-        slots: nextSlots,
-        status: 'playing',
-        meta: puzzle.meta,
-        publicSlots: puzzle.slots,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulmaca yüklenemedi');
-    } finally {
-      setLoadingPuzzle(false);
-    }
-  }
-
   const activeSlotPublic = activeSlot !== null ? slots.find((s) => s.index === activeSlot) : null;
   const activeSlotState =
     activeSlot !== null
@@ -956,7 +924,12 @@ export function MissingXiGame() {
         {/* LEFT: info + options */}
         <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[300px] xl:w-[320px]">
           <header className="mb-5">
-            <h1 className="text-[28px] font-semibold tracking-tight text-ink">Kayıp 11</h1>
+            <GameTitle
+              gameId="missing-xi"
+              className="text-[28px] font-semibold tracking-tight text-ink"
+            >
+              Kayıp 11
+            </GameTitle>
             <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
               İlk 11&apos;i Wordle tarzı harf tahminleriyle tamamla.
             </p>
@@ -1137,13 +1110,6 @@ export function MissingXiGame() {
                         ? 'Pes ettiniz — cevaplar açıldı.'
                         : 'Tur bitti.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => void handlePlayAgain()}
-                    className="mt-3 rounded-md bg-brand px-4 py-2 text-[13px] font-medium text-white transition hover:bg-brand-dark"
-                  >
-                    Tekrar oyna
-                  </button>
                 </div>
               )}
             </div>

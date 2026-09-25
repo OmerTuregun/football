@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Heart } from 'lucide-react';
 
-import { type DifficultyId } from '@/lib/difficulty-config';
-import { isToday, shouldPersistGameState } from '@/lib/daily-access';
-import { ONLUK_LIVES, ONLUK_SIZE } from '@/lib/onluk-shared';
-import { isGameStartBlocked } from '@/lib/daily-access';
+import { getOfficialPlayRecord, isGameStartBlocked, shouldPersistGameState } from '@/lib/daily-access';
+import { ONLUK_DIFFICULTY, ONLUK_LIVES, ONLUK_SIZE } from '@/lib/onluk-shared';
 import { GameSetupPanel } from '@/components/GameSetupPanel';
+import { GameTitle } from '@/components/GameHelpButton';
 import { GameTimer } from '@/components/GameTimer';
 import { useGameShell } from '@/hooks/useGameShell';
 
@@ -33,7 +32,6 @@ interface OnlukPuzzlePublic {
   seasonTo: number;
   date: string;
   session: number;
-  difficulty: DifficultyId;
 }
 
 interface GuessResult {
@@ -58,7 +56,6 @@ interface SearchResult {
 
 interface StoredGameState {
   date: string;
-  difficulty: DifficultyId;
   session: number;
   title: string;
   note: string;
@@ -80,44 +77,49 @@ const SCAN_STEP_MS = 110;
 const HIT_HOLD_MS = 420;
 const MISS_FLASH_MS = 520;
 
-function storageKey(difficulty: DifficultyId, date: string, session: number): string {
-  return `football-onluk:v3:${difficulty}:${date}:${session}`;
+function storageKey(date: string, session: number): string {
+  return `football-onluk:v4:${date}:${session}`;
 }
 
-function sessionMetaKey(difficulty: DifficultyId, date: string): string {
-  return `football-onluk:v3:session:${difficulty}:${date}`;
+function sessionMetaKey(date: string): string {
+  return `football-onluk:v4:session:${date}`;
 }
 
 function emptySlots(): Array<OnlukAnswer | null> {
   return Array.from({ length: ONLUK_SIZE }, () => null);
 }
 
-function loadState(
-  difficulty: DifficultyId,
-  date: string,
-  session: number
-): StoredGameState | null {
-  if (typeof window === 'undefined') return null;
+function parseStoredState(raw: string, date: string, session: number): StoredGameState | null {
   try {
-    const raw = localStorage.getItem(storageKey(difficulty, date, session));
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredGameState;
-    if (parsed.date !== date || parsed.difficulty !== difficulty || parsed.session !== session) {
-      return null;
-    }
+    if (parsed.date !== date || parsed.session !== session) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
+function loadState(date: string, session: number): StoredGameState | null {
+  if (typeof window === 'undefined') return null;
+  const v4 = localStorage.getItem(storageKey(date, session));
+  if (v4) {
+    const parsed = parseStoredState(v4, date, session);
+    if (parsed) return parsed;
+  }
+  // Legacy saves before difficulty was removed (v3)
+  for (const diff of ['medium', 'easy', 'hard'] as const) {
+    const legacy = localStorage.getItem(`football-onluk:v3:${diff}:${date}:${session}`);
+    if (!legacy) continue;
+    const parsed = parseStoredState(legacy, date, session);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
 function saveState(state: StoredGameState): void {
   if (!shouldPersistGameState(state.date)) return;
-  localStorage.setItem(
-    storageKey(state.difficulty, state.date, state.session),
-    JSON.stringify(state)
-  );
-  localStorage.setItem(sessionMetaKey(state.difficulty, state.date), String(state.session));
+  localStorage.setItem(storageKey(state.date, state.session), JSON.stringify(state));
+  localStorage.setItem(sessionMetaKey(state.date), String(state.session));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -128,7 +130,6 @@ export function OnlukGame() {
   const shell = useGameShell('onluk');
   const { date, setDate, timerEnabled, setTimerEnabled, timerLimitSec, recordOfficialResult } =
     shell;
-  const [difficulty, setDifficulty] = useState<DifficultyId>('easy');
   const [session, setSession] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +178,6 @@ export function OnlukGame() {
     ) => {
       saveState({
         date,
-        difficulty,
         session,
         title,
         note,
@@ -193,7 +193,7 @@ export function OnlukGame() {
         foundIds: partial.foundIds ?? foundIds,
       });
     },
-    [date, difficulty, session, title, note, subtitle, crestA, crestB, unit, gaveUp, foundIds]
+    [date, session, title, note, subtitle, crestA, crestB, unit, gaveUp, foundIds]
   );
 
   const applyPuzzle = useCallback(
@@ -240,26 +240,30 @@ export function OnlukGame() {
   );
 
   const loadPuzzle = useCallback(
-    async (diff: DifficultyId, sess: number, preferRestore: boolean) => {
-      if (isGameStartBlocked('onluk', date)) {
-        setLoading(false);
-        return;
-      }
+    async (sess: number, preferRestore: boolean) => {
       setLoading(true);
       setError(null);
+      const blocked = isGameStartBlocked('onluk', date);
       try {
         const restoreOk = preferRestore && shouldPersistGameState(date);
-        const restored = restoreOk ? loadState(diff, date, sess) : null;
-        const res = await fetch(
-          `/api/games/onluk/puzzle?difficulty=${diff}&date=${date}&session=${sess}`
-        );
+        const restored = restoreOk ? loadState(date, sess) : null;
+        const res = await fetch(`/api/games/onluk/puzzle?date=${date}&session=${sess}`);
         const data = (await res.json()) as OnlukPuzzlePublic & { error?: string };
         if (!res.ok) throw new Error(data.error ?? 'Puzzle yüklenemedi');
         applyPuzzle(data, restored);
-        if (!restored || restored.title !== data.title) {
+
+        if (blocked && !restored) {
+          const official = getOfficialPlayRecord('onluk', date);
+          if (official) {
+            setStatus(official.status === 'won' ? 'won' : 'lost');
+            if (official.status === 'lost') {
+              setLivesLeft(0);
+              setLostModalOpen(true);
+            }
+          }
+        } else if (!blocked && (!restored || restored.title !== data.title)) {
           saveState({
             date,
-            difficulty: diff,
             session: sess,
             title: data.title,
             note: data.note,
@@ -290,8 +294,8 @@ export function OnlukGame() {
     if (bootRef.current) return;
     bootRef.current = true;
     setSession(0);
-    void loadPuzzle(difficulty, 0, true);
-  }, [date, difficulty, loadPuzzle]);
+    void loadPuzzle(0, true);
+  }, [date, loadPuzzle]);
 
   const handleTimerExpire = useCallback(() => {
     if (status !== 'playing' || busy) return;
@@ -339,13 +343,6 @@ export function OnlukGame() {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
   }, [query, status, usedIds, busy]);
-
-  const onDifficulty = (diff: DifficultyId) => {
-    if (diff === difficulty || busy) return;
-    setDifficulty(diff);
-    setSession(0);
-    void loadPuzzle(diff, 0, true);
-  };
 
   const onDateChange = (next: string) => {
     setDate(next);
@@ -399,7 +396,6 @@ export function OnlukGame() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          difficulty,
           date,
           session,
           playerId: player.id,
@@ -479,7 +475,7 @@ export function OnlukGame() {
       const res = await fetch('/api/games/onluk/give-up', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty, date, session }),
+        body: JSON.stringify({ date, session }),
       });
       const data = (await res.json()) as {
         answers?: OnlukAnswer[];
@@ -526,7 +522,9 @@ export function OnlukGame() {
   return (
     <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:px-6 lg:py-8">
       <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[280px] lg:self-start">
-        <h1 className="text-[22px] font-semibold tracking-tight text-ink">Onluk</h1>
+        <GameTitle gameId="onluk" className="text-[22px] font-semibold tracking-tight text-ink">
+          Onluk
+        </GameTitle>
         <p className="mt-2 text-[13px] leading-relaxed text-muted">
           Son 3 sezona göre ilk 10. İsim alttan yukarı kutuları gezer; doğruysa yerine oturur.
           İki peş peşe doğru → +1 can (en fazla 3).
@@ -536,8 +534,9 @@ export function OnlukGame() {
           gameId="onluk"
           date={date}
           onDateChange={onDateChange}
-          difficulty={difficulty}
-          onDifficultyChange={onDifficulty}
+          difficulty={ONLUK_DIFFICULTY}
+          onDifficultyChange={() => {}}
+          showDifficulty={false}
           timerEnabled={timerEnabled}
           onTimerEnabledChange={setTimerEnabled}
           disabled={busy}
@@ -666,15 +665,6 @@ export function OnlukGame() {
               className="rounded-card border border-miss-dark/40 bg-miss-light px-3 py-2 text-[12px] font-semibold text-miss-dark hover:bg-miss-light/80 disabled:opacity-50"
             >
               Cevapları gör
-            </button>
-          )}
-          {(status === 'won' || status === 'lost') && !isToday(date) && (
-            <button
-              type="button"
-              onClick={() => void loadPuzzle(difficulty, 0, false)}
-              className="rounded-card bg-brand px-3 py-2 text-[12px] font-medium text-white hover:bg-brand-dark"
-            >
-              Yeniden dene
             </button>
           )}
         </div>
